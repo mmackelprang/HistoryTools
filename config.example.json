@@ -1,0 +1,18 @@
+{
+  "source_root": "/path/to/source/files",
+  "dest_root": "/path/to/Organized",
+  "mode": "standalone",
+  "exclude_dirs": [".organizer", ".trashbox", "Organized", "Pics2PDF", ".git", "__pycache__"],
+  "exclude_exts": [".ini", ".lnk", ".aup3", ".db", ".tmp", ".DS_Store"],
+  "tesseract_path": "tesseract",
+  "whisper_model": "base",
+  "transcribe_folders": [
+    "Letters", "Journals", "Cards",
+    "Documents/Writings", "Documents/Church",
+    "FamilyMembers", "NeedsReview"
+  ],
+  "skip_existing_transcripts": true,
+  "custom_categories": {
+    "_example_: delete this line and add your own": ["category", "Subfolder/Path"]
+  }
+}
