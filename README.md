@@ -2,132 +2,149 @@
 
 A CLI toolkit for digitizing, organizing, transcribing, and searching family archives — scanned documents, photos, audio recordings, and more. Turn a box of old scans, cassette tapes, and photos into a searchable, organized, transcribed digital archive.
 
-## What It Does
-
-| Step | Script | What Happens |
-|------|--------|-------------|
-| 0 | `bootstrap.py` | Scan, classify, and process an entire source folder in one command |
-| 1 | `verify_tools.py` | Checks that all required tools are installed |
-| 2 | `organize.py` | Classifies files by name/type, renames with dates, copies to organized folders |
-| 3 | `transcribe_pdfs.py` | Extracts text from PDFs (native text or Tesseract OCR) |
-| 4 | `transcribe_pdfs_gemini.py` | Transcribes PDFs using Google Gemini AI vision (great for handwriting) |
-| 5 | `transcribe_audio.py` | Transcribes audio locally with OpenAI Whisper |
-| 6 | `transcribe_audio_assemblyai.py` | Transcribes audio with AssemblyAI (speaker diarization) |
-| 7 | `format_transcripts.py` | Adds summaries, headers, and markdown formatting to transcripts |
-| 8 | `label_speakers.py` | Assigns real names to Speaker A/B/C labels in audio transcripts |
-| 9 | `propose_renames.py` | Proposes descriptive filenames for generic files using AI |
-| 10 | `apply_renames.py` | Applies reviewed rename proposals |
-| 11 | `detect_dates.py` | Detects dates in undated files and proposes renames |
-| 12 | `catalog_photos.py` | Reads EXIF data, generates photo catalog |
-| 13 | `handle_duplicates.py` | Finds identical files by MD5 hash, moves dupes |
-| 14 | `generate_report.py` | Produces archive summary with statistics |
-
 ## Installation
 
-### From source (recommended for development)
 ```bash
 git clone https://github.com/mmackelprang/HistoryTools.git
 cd HistoryTools
 pip install -e ".[all]"
 ```
 
-### From PyPI (coming soon)
-```bash
-pip install family-archive-toolkit
-```
-
 After installation, the `family-archive` command is available:
+
 ```bash
 family-archive --help
-family-archive verify
-family-archive bootstrap /path/to/scans
 ```
+
+### System tools (also needed)
+
+- **Tesseract OCR**: https://github.com/tesseract-ocr/tesseract
+- **FFmpeg**: https://ffmpeg.org/download.html
 
 ## Quick Start
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/mmackelprang/HistoryTools.git
-cd HistoryTools
+# 1. Verify all tools are installed
+family-archive verify
 
-# 2. Install Python dependencies
-pip install -e ".[all]"
-# Or install manually:
-# pip install PyMuPDF exifread openai-whisper Pillow google-genai assemblyai python-dotenv anthropic
-
-# 3. Install system tools
-# Tesseract OCR: https://github.com/tesseract-ocr/tesseract
-# FFmpeg: https://ffmpeg.org/download.html
-
-# 4. Verify everything is installed
-python scripts/verify_tools.py
-
-# 5. Set up configuration
+# 2. Set up configuration
 cp config.example.json config.json
 # Edit config.json with your source and destination paths
 
-# 6. Set up API keys (optional, for AI features)
+# 3. Set up API keys (optional, for AI features)
 cp .env.example .env
 # Edit .env with your API keys (see docs/SETUP-API-KEYS.md)
 
-# 7. Bootstrap — scan, classify, and process everything
-python scripts/bootstrap.py /path/to/your/scans --scan    # scan and classify (writes plan)
-python scripts/bootstrap.py --execute                     # run the full pipeline
+# 4. Process your archive
+family-archive bootstrap /path/to/your/scans
 ```
 
-## Bootstrap (One-Command Processing)
+## Commands
+
+### Bootstrap — Process Everything at Once
 
 The fastest way to process a folder of scans, recordings, and photos:
 
 ```bash
-# Scan source folder and preview classification
-python scripts/bootstrap.py /path/to/scans --scan
+# Scan and classify all files, produce a plan for review
+family-archive bootstrap /path/to/scans --scan
 
 # Review _bootstrap-plan.json (edit classifications if needed)
 
-# Execute the full pipeline
-python scripts/bootstrap.py --execute
+# Execute the full pipeline (copy, transcribe, format, rename)
+family-archive bootstrap --execute
 
-# Or do it interactively (scan + approve + execute)
-python scripts/bootstrap.py /path/to/scans
+# Or do it interactively (scan → approve → execute)
+family-archive bootstrap /path/to/scans
 
 # Merge new files into an existing archive
-python scripts/bootstrap.py /path/to/new-scans --scan --mode merge
+family-archive bootstrap /path/to/new-scans --scan --mode merge
+
+# Source can be a ZIP file (nested ZIPs are handled too)
+family-archive bootstrap /path/to/archive.zip --scan
 ```
 
-Bootstrap is fully restartable — if interrupted, just run `--execute` again.
-It skips already-copied files, already-transcribed files, and already-formatted
-transcripts, picking up where it left off.
+Bootstrap is fully restartable — if interrupted, run `--execute` again.
+
+### Individual Steps
+
+You can also run each step individually for more control:
+
+```bash
+# Organize files into the archive structure
+family-archive organize --dry-run        # preview
+family-archive organize                  # run
+
+# Transcribe PDFs (Gemini AI — best for handwriting)
+family-archive transcribe --dry-run      # preview + cost estimate
+family-archive transcribe                # run
+
+# Transcribe audio (AssemblyAI — with speaker diarization)
+family-archive transcribe-audio --dry-run
+family-archive transcribe-audio
+
+# Assign real names to speaker labels (e.g., Speaker A → Alice)
+family-archive speakers path/to/transcript.md              # interactive
+family-archive speakers --dir AudioRecordings --map "A=Alice,B=Bob"  # batch
+
+# Format transcripts with summaries and markdown structure
+family-archive format --dry-run
+family-archive format
+
+# Propose descriptive filenames for generic files
+family-archive rename --dry-run          # preview
+family-archive rename                    # generate proposals
+# Review _rename-proposals.md, then:
+family-archive rename --apply            # apply approved renames
+
+# Detect dates in undated files
+family-archive detect-dates              # generate proposals
+family-archive detect-dates --apply      # apply approved dates
+
+# Catalog photos, detect duplicates, generate report
+family-archive photos
+family-archive duplicates
+family-archive report
+
+# Check tool installation
+family-archive verify
+```
+
+### Targeting Specific Files or Folders
+
+Most commands support `--folder` and `--file` for targeted processing:
+
+```bash
+family-archive transcribe --folder Journals
+family-archive format --file Letters/1983/letter.transcript.md
+family-archive rename --folder FamilyMembers
+```
 
 ## AI-Powered Features
 
 These features require API keys (see [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEYS.md)):
 
-| Script | Service | What It Does | Estimated Cost |
-|--------|---------|-------------|---------------|
-| `transcribe_pdfs_gemini.py` | Google Gemini | AI vision for handwriting OCR | ~$0.50-1.00 per 1000 pages |
-| `transcribe_audio_assemblyai.py` | AssemblyAI | Speaker-diarized audio transcription | ~$0.01/minute |
-| `format_transcripts.py` | Anthropic Claude | Markdown formatting + summaries | ~$0.10-0.20 per 500 files |
-| `propose_renames.py` | Google Gemini | AI-suggested filenames | ~$0.10-0.30 per 500 files |
-| `detect_dates.py` | Google Gemini | Date detection in undated files | ~$0.05-0.10 per 200 files |
+| Command | Service | What It Does | Estimated Cost |
+|---------|---------|-------------|---------------|
+| `family-archive transcribe` | Google Gemini | AI vision for handwriting OCR | ~$0.50-1.00 per 1000 pages |
+| `family-archive transcribe-audio` | AssemblyAI | Speaker-diarized audio transcription | ~$0.01/minute |
+| `family-archive format` | Anthropic Claude | Markdown formatting + summaries | ~$0.10-0.20 per 500 files |
+| `family-archive rename` | Google Gemini | AI-suggested filenames | ~$0.10-0.30 per 500 files |
+| `family-archive detect-dates` | Google Gemini | Date detection in undated files | ~$0.05-0.10 per 200 files |
 
-## Two Modes
+All AI features are optional. Without API keys, local tools (Tesseract OCR, Whisper) are used instead.
 
-### Standalone Mode (`"mode": "standalone"`)
-Creates a fresh organized archive from scratch. Use for:
-- A new collection of scanned documents
-- Starting your first digital archive
-- Testing on a small batch before committing
+## Modes
 
-### Merge Mode (`"mode": "merge"`)
-Adds new files into an existing organized archive. Use for:
-- Adding a new batch of scans
-- Combining multiple family archives
-- Incremental processing as new documents are found
+### Standalone (`"mode": "standalone"`)
+Creates a fresh organized archive from scratch.
+
+### Merge (`"mode": "merge"`)
+Adds new files into an existing organized archive. Detects duplicates by MD5 hash.
 
 ## Configuration
 
-Edit `config.json` (copy from `config.example.json`):
+### config.json — Paths and settings
 
 ```json
 {
@@ -139,47 +156,29 @@ Edit `config.json` (copy from `config.example.json`):
 }
 ```
 
-## Taxonomy (File Classification Rules)
+### taxonomy.json — File classification rules
 
-Classification rules -- file types, folder keywords, and processing pipelines -- are defined in `taxonomy.json`. This file ships with sensible defaults and can be customized without editing code.
+Controls how files are classified, which keywords trigger which folders, and which processing steps apply to each file type. Ships with sensible defaults, fully customizable.
 
-**What it controls:**
+```bash
+# Add a new file extension (e.g., .webp as a photo type)
+# Edit taxonomy.json → file_types → photo → extensions
 
-- **File types** -- which extensions map to which category (document, audio, photo, etc.) and where specific types are routed (e.g., spreadsheets to NeedsReview, email to _imports/)
-- **Folders** -- which keywords in folder names or filenames trigger classification into specific destination folders
-- **Processing pipelines** -- which processing steps (transcribe, format, rename, etc.) apply to each file type
+# Add a new classification folder (e.g., Military records)
+# Edit taxonomy.json → folders → add "Military/Service" with keywords
 
-**Customizing:**
-
-To add a new file extension (e.g., `.webp` as a photo type):
-```json
-"photo": {
-  "extensions": [".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".heic", ".webp"],
-  "route_to": "Media/Photos"
-}
+# Customize processing pipelines
+# Edit taxonomy.json → processing_pipelines
 ```
 
-To add a new folder classification (e.g., military records):
-```json
-"Military/Service": {
-  "keywords": ["military", "army", "navy", "veteran"],
-  "filename_keywords": ["enlistment", "discharge"],
-  "description": "Military service records"
-}
-```
+See `taxonomy.example.json` for a fully commented reference. If `taxonomy.json` is missing, built-in defaults are used automatically.
 
-To customize a processing pipeline:
-```json
-"processing_pipelines": {
-  "document": ["copy", "transcribe", "format", "rename", "detect_date"],
-  "audio": ["copy", "transcribe_audio", "format", "rename"],
-  "photo": ["copy", "catalog_photos"],
-  "video": ["copy"],
-  "default": ["copy"]
-}
-```
+### .env — API keys
 
-If `taxonomy.json` is missing, built-in defaults are used automatically -- the system works identically to before. See `taxonomy.example.json` for a fully commented reference.
+```bash
+cp .env.example .env
+# Edit with your keys (see docs/SETUP-API-KEYS.md)
+```
 
 ## File Naming Convention
 
@@ -189,27 +188,6 @@ All files are renamed to: `YYYY-MM-DD_descriptive-slug.ext`
 - Unknown dates: `undated_slug.ext`
 - Partial dates: `1983-06-00_slug.ext` (month known, day unknown)
 
-## Required Tools
-
-| Tool | Install | Purpose |
-|------|---------|---------|
-| Python 3.10+ | — | Script runtime |
-| Pillow | `pip install Pillow` | Image processing |
-| PyMuPDF | `pip install PyMuPDF` | PDF text extraction & page rendering |
-| exifread | `pip install exifread` | EXIF metadata from photos |
-| Tesseract | [tesseract-ocr](https://github.com/tesseract-ocr/tesseract) | OCR for scanned documents |
-| FFmpeg | [ffmpeg.org](https://ffmpeg.org/download.html) | Audio duration/metadata |
-
-### Optional (for AI features)
-
-| Tool | Install | Purpose |
-|------|---------|---------|
-| google-genai | `pip install google-genai` | Gemini AI for handwriting OCR |
-| assemblyai | `pip install assemblyai` | Audio transcription with speaker ID |
-| anthropic | `pip install anthropic` | Transcript formatting with Claude |
-| python-dotenv | `pip install python-dotenv` | Load API keys from .env |
-| Whisper | `pip install openai-whisper` | Local audio transcription |
-
 ## Safety
 
 - **Source files are never modified or deleted** — all operations produce copies
@@ -218,6 +196,23 @@ All files are renamed to: `YYYY-MM-DD_descriptive-slug.ext`
 - **All operations support `--dry-run`** — preview before committing
 - **All operations are restartable** — interrupted jobs resume where they left off
 - **Proposals require review** — renames, date changes, and splits are proposed then applied
+
+## Dependencies
+
+Installed automatically via `pip install -e ".[all]"`:
+
+| Package | Purpose |
+|---------|---------|
+| PyMuPDF | PDF text extraction & page rendering |
+| Pillow | Image processing |
+| python-dotenv | Load API keys from .env |
+| google-genai | Gemini AI for handwriting OCR |
+| assemblyai | Audio transcription with speaker ID |
+| anthropic | Transcript formatting with Claude |
+| openai-whisper | Local audio transcription |
+| exifread | EXIF metadata from photos |
+
+System tools (install separately): [Tesseract OCR](https://github.com/tesseract-ocr/tesseract), [FFmpeg](https://ffmpeg.org/download.html)
 
 ## Documentation
 
