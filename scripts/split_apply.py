@@ -15,7 +15,6 @@ Usage:
     python split_apply.py --archive-original                 # move originals to _compilations/
 """
 
-import re
 import sys
 import json
 import argparse
@@ -100,11 +99,10 @@ def extract_transcript_pages(transcript_body, page_numbers):
     return "\n".join(lines).strip()
 
 
-def create_split_transcript(source_frontmatter, extracted_text, segment, source_filename):
+def create_split_transcript(extracted_text, segment, source_filename):
     """Create a .transcript.md file for a split segment.
 
     Args:
-        source_frontmatter: Original frontmatter text (between --- markers).
         extracted_text: Extracted and renumbered page text.
         segment: Segment dict from proposals (with proposed_name, pages, etc.).
         source_filename: Original compilation filename.
@@ -203,6 +201,14 @@ def apply_single_split(source_pdf, source_transcript, segment, dest_root, dry_ru
     try:
         extracted_count = extract_pdf_pages(source_pdf, pages, output_pdf)
         result["page_count"] = extracted_count
+        if extracted_count == 0:
+            result["status"] = "error"
+            result["reason"] = f"No valid pages extracted (requested pages {pages} may be out of range)"
+            if output_pdf.exists():
+                output_pdf.unlink()  # clean up empty PDF
+            return result
+        if extracted_count < len(pages):
+            print(f"    WARNING: Only {extracted_count}/{len(pages)} pages extracted (some out of range)")
     except Exception as e:
         result["status"] = "error"
         result["reason"] = f"PDF extraction failed: {e}"
@@ -222,7 +228,7 @@ def apply_single_split(source_pdf, source_transcript, segment, dest_root, dry_ru
 
             # Create new transcript
             transcript_content = create_split_transcript(
-                source_frontmatter, extracted_text, segment, source_pdf.name
+                extracted_text, segment, source_pdf.name
             )
             output_transcript.write_text(transcript_content, encoding="utf-8")
             result["transcript_created"] = True

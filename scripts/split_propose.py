@@ -13,7 +13,6 @@ Usage:
     python split_propose.py --model gemini-2.5-pro       # override model
 """
 
-import os
 import re
 import sys
 import json
@@ -267,9 +266,11 @@ def build_proposal_entry(source_file, source_pages, segments, transcript_pages, 
         description = seg.get("description", "")
         skip = seg.get("skip", False)
 
-        # Sanitize slug
+        # Sanitize slug (fallback to "unknown" if empty after sanitization)
         slug = re.sub(r"[^a-z0-9-]", "-", slug.lower())
         slug = re.sub(r"-+", "-", slug).strip("-")
+        if not slug:
+            slug = "unknown"
 
         # Validate and sanitize date (prevent path traversal from AI)
         if date and date != "undated":
@@ -286,6 +287,8 @@ def build_proposal_entry(source_file, source_pages, segments, transcript_pages, 
         try:
             rel = pdf_path.relative_to(dest_root)
             proposed_folder = str(rel.parent).replace("\\", "/")
+            if proposed_folder == ".":
+                proposed_folder = ""
         except ValueError:
             proposed_folder = ""
 
@@ -461,9 +464,15 @@ def main():
             proposals = []
 
     # Filter out already-proposed files
+    def _safe_rel(p):
+        try:
+            return str(p.relative_to(dest_root)).replace("\\", "/")
+        except ValueError:
+            return str(p)
+
     splittable = [
         (pdf_path, page_count) for pdf_path, page_count in splittable
-        if str(pdf_path.relative_to(dest_root)).replace("\\", "/") not in already_proposed
+        if _safe_rel(pdf_path) not in already_proposed
     ]
 
     if not splittable:

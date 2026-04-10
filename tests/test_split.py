@@ -345,7 +345,7 @@ class TestCreateSplitTranscript:
             "description": "Letter from Alice",
         }
         result = create_split_transcript(
-            "", "## Page 1\n\nDear Bob.\n", segment, "compilation.pdf"
+            "## Page 1\n\nDear Bob.\n", segment, "compilation.pdf"
         )
         assert "transcription_method: split (from compilation.pdf)" in result
 
@@ -355,7 +355,7 @@ class TestCreateSplitTranscript:
             "pages": [1],
             "description": "Letter",
         }
-        result = create_split_transcript("", "Hello.", segment, "compilation.pdf")
+        result = create_split_transcript("Hello.", segment, "compilation.pdf")
         assert "source_file: 1984-03-15_letter-alice.pdf" in result
 
     def test_correct_page_count(self):
@@ -364,7 +364,7 @@ class TestCreateSplitTranscript:
             "pages": [3, 4, 5],
             "description": "",
         }
-        result = create_split_transcript("", "Some text here.", segment, "source.pdf")
+        result = create_split_transcript("Some text here.", segment, "source.pdf")
         assert "page_count: 3" in result
 
     def test_correct_word_count(self):
@@ -374,7 +374,7 @@ class TestCreateSplitTranscript:
             "description": "",
         }
         text = "one two three four five"
-        result = create_split_transcript("", text, segment, "source.pdf")
+        result = create_split_transcript(text, segment, "source.pdf")
         assert "word_count: 5" in result
 
     def test_includes_description(self):
@@ -383,7 +383,7 @@ class TestCreateSplitTranscript:
             "pages": [1],
             "description": "Letter from Alice about spring",
         }
-        result = create_split_transcript("", "text", segment, "source.pdf")
+        result = create_split_transcript("text", segment, "source.pdf")
         assert "description: Letter from Alice about spring" in result
 
     def test_empty_description_omitted(self):
@@ -392,7 +392,7 @@ class TestCreateSplitTranscript:
             "pages": [1],
             "description": "",
         }
-        result = create_split_transcript("", "text", segment, "source.pdf")
+        result = create_split_transcript("text", segment, "source.pdf")
         assert "description:" not in result
 
     def test_frontmatter_delimiters_present(self):
@@ -401,7 +401,7 @@ class TestCreateSplitTranscript:
             "pages": [1],
             "description": "",
         }
-        result = create_split_transcript("", "Body text.", segment, "source.pdf")
+        result = create_split_transcript("Body text.", segment, "source.pdf")
         assert result.startswith("---\n")
         assert "\n---\n" in result
 
@@ -412,7 +412,7 @@ class TestCreateSplitTranscript:
             "description": "",
         }
         result = create_split_transcript(
-            "", "## Page 1\n\nHello world.\n", segment, "source.pdf"
+            "## Page 1\n\nHello world.\n", segment, "source.pdf"
         )
         # The extracted_text is passed directly, so it should appear in output
         assert "Hello world." in result
@@ -423,7 +423,7 @@ class TestCreateSplitTranscript:
             "pages": [1],
             "description": "",
         }
-        result = create_split_transcript("", "", segment, "source.pdf")
+        result = create_split_transcript("", segment, "source.pdf")
         assert "word_count: 0" in result
 
     def test_confidence_is_medium(self):
@@ -432,5 +432,5 @@ class TestCreateSplitTranscript:
             "pages": [1],
             "description": "",
         }
-        result = create_split_transcript("", "text", segment, "source.pdf")
+        result = create_split_transcript("text", segment, "source.pdf")
         assert "transcription_confidence: medium" in result
