@@ -50,6 +50,17 @@ def find_splittable_pdfs(dest_root, min_pages=5, transcribe_folders=None):
             "FamilyMembers", "NeedsReview",
         ]
 
+    # Load split log to skip already-split files
+    already_split = set()
+    split_log_path = dest_root / "_split-log.json"
+    if split_log_path.exists():
+        try:
+            with open(split_log_path, "r", encoding="utf-8") as f:
+                log_entries = json.load(f)
+            already_split = {e.get("source_file", "") for e in log_entries}
+        except (json.JSONDecodeError, IOError):
+            pass
+
     results = []
     for folder in transcribe_folders:
         folder_path = dest_root / folder
@@ -60,6 +71,11 @@ def find_splittable_pdfs(dest_root, min_pages=5, transcribe_folders=None):
             if pdf_path.name.startswith("_"):
                 continue
 
+            # Skip files that have already been split
+            rel_path = str(pdf_path.relative_to(dest_root)).replace("\\", "/")
+            if rel_path in already_split:
+                continue
+
             # Check for existing transcript
             transcript_path = pdf_path.with_suffix(".transcript.md")
             if not transcript_path.exists():
@@ -67,9 +83,8 @@ def find_splittable_pdfs(dest_root, min_pages=5, transcribe_folders=None):
 
             # Check page count
             try:
-                doc = fitz.open(str(pdf_path))
-                page_count = len(doc)
-                doc.close()
+                with fitz.open(str(pdf_path)) as doc:
+                    page_count = len(doc)
             except Exception:
                 continue
 
@@ -255,6 +270,11 @@ def build_proposal_entry(source_file, source_pages, segments, transcript_pages, 
         # Sanitize slug
         slug = re.sub(r"[^a-z0-9-]", "-", slug.lower())
         slug = re.sub(r"-+", "-", slug).strip("-")
+
+        # Validate and sanitize date (prevent path traversal from AI)
+        if date and date != "undated":
+            if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+                date = "undated"
 
         # Build proposed name
         if date and date != "undated":

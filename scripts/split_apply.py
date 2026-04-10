@@ -161,6 +161,15 @@ def apply_single_split(source_pdf, source_transcript, segment, dest_root, dry_ru
     proposed_name = segment.get("proposed_name", "unknown.pdf")
     proposed_folder = segment.get("proposed_folder", "")
 
+    # Path traversal protection
+    if ".." in proposed_name or "/" in proposed_name or "\\" in proposed_name:
+        return {
+            "status": "error",
+            "reason": f"Invalid proposed name (path traversal): {proposed_name}",
+            "source_file": str(source_pdf),
+            "pages": pages,
+        }
+
     # Build output paths
     output_dir = dest_root / proposed_folder if proposed_folder else source_pdf.parent
     output_pdf = output_dir / proposed_name
@@ -312,8 +321,8 @@ def main():
                 error_count += 1
                 print(f" [ERROR: {result.get('reason', '')}]")
 
-        # Archive original if requested
-        if args.archive_original and not args.dry_run:
+        # Archive original if requested (only if no errors)
+        if args.archive_original and not args.dry_run and error_count == 0:
             compilations_dir = source_pdf.parent / "_compilations"
             compilations_dir.mkdir(exist_ok=True)
 
@@ -338,6 +347,10 @@ def main():
     print(f"\n{'=' * 60}")
     action = "Would create" if args.dry_run else "Created"
     print(f"{action}: {ok_count} files, skipped: {skip_count}, errors: {error_count}")
+
+    if args.retranscribe and ok_count > 0 and not args.dry_run:
+        print(f"\nNote: --retranscribe was set. Transcripts were not extracted.")
+        print(f"Run 'family-archive transcribe' to transcribe the split PDFs.")
 
     if not args.dry_run and results:
         # Write split log
