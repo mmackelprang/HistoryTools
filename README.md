@@ -245,14 +245,16 @@ System tools (install separately): [Tesseract OCR](https://github.com/tesseract-
 
 ## Roadmap
 
+**Open source (this repo):**
 - **Phase 1** (current): CLI toolkit for documents, audio, and basic organization
 - **Phase 2**: Library refactor, SQLite index, entity extraction, document splitting, video transcription
-- **Phase 3**: Web UI for browsing, searching, and managing the archive
-- **Phase 4**: Photo AI (scene descriptions, face recognition, date estimation)
-- **Phase 5**: SMS/email/Google Timeline import, correlation engine, HistoryTools Cloud launch
-- **Phase 6**: Timeline view, map view, people graph — life history visualization
-- **Phase 7**: Narrative generation, FamilySearch integration
-- **Phase 8**: Multi-family support, sharing, collaboration
+
+**Subscription service ([historytools.io](https://historytools.io)):**
+- **Phase 3+**: Web UI, managed AI gateway, photo AI, timeline/map/people graph, narrative generation, FamilySearch integration, multi-family collaboration
+
+The open-source CLI is fully functional on its own. The subscription service adds a
+web UI, managed AI, and advanced visualization features. Data is fully portable between both.
+See [docs/VISION.md](docs/VISION.md) for the complete roadmap.
 
 ## License
 
