@@ -1,5 +1,11 @@
 """
-AI Cost Tracker -- records actual token usage and costs from API calls.
+AI Cost Tracker -- records token usage and estimated costs from API calls.
+
+Token counts are actual (from API response metadata). Dollar costs are
+ESTIMATES based on published per-token pricing in MODEL_COSTS. Actual
+billing may differ due to price changes, caching discounts, image token
+pricing, or per-request minimums. Compare _costs.json totals against
+your vendor dashboards for exact billing.
 
 Costs are tracked per-call, rolled up by pipeline step and file,
 and saved to _costs.json in the archive root.
@@ -98,6 +104,7 @@ class CostTracker:
         print(f"  {'─' * 46}")
         print(f"  {'TOTAL':30s} {self.call_count:3d} calls  ${self.total_cost:.4f}")
         print(f"  Tokens: {self.total_input_tokens:,} in / {self.total_output_tokens:,} out")
+        print(f"  (costs are estimates based on published per-token pricing)")
 
     def save(self, dest_root):
         """Append session costs to _costs.json in the archive root."""

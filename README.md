@@ -162,7 +162,8 @@ A unified AI client (`ai_client.py`) supports Gemini, OpenAI, and Anthropic — 
 via a `--vendor` CLI flag is planned for an upcoming release.
 
 AI costs are tracked automatically. Run `family-archive costs` to see token usage and
-estimated spend across all sessions.
+estimated spend across all sessions. Costs are estimates based on published per-token
+pricing — compare against your vendor dashboards for exact billing.
 
 ## Modes
 
