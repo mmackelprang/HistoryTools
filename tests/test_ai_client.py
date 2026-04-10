@@ -11,9 +11,15 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 # Check which vendor SDKs are available (for conditional skipping)
-_has_genai = importlib.util.find_spec("google.genai") is not None or importlib.util.find_spec("google") is not None
-_has_openai = importlib.util.find_spec("openai") is not None
-_has_anthropic = importlib.util.find_spec("anthropic") is not None
+def _check_module(name):
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ModuleNotFoundError, ValueError):
+        return False
+
+_has_genai = _check_module("google.genai") or _check_module("google")
+_has_openai = _check_module("openai")
+_has_anthropic = _check_module("anthropic")
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
