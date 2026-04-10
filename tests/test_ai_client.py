@@ -4,10 +4,16 @@ Tests for ai_client.py -- unified AI client abstraction.
 
 import sys
 import os
+import importlib
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
+
+# Check which vendor SDKs are available (for conditional skipping)
+_has_genai = importlib.util.find_spec("google.genai") is not None or importlib.util.find_spec("google") is not None
+_has_openai = importlib.util.find_spec("openai") is not None
+_has_anthropic = importlib.util.find_spec("anthropic") is not None
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -34,7 +40,7 @@ class TestGetAiClient:
                 get_ai_client(vendor="deepseek")
 
     def test_explicit_vendor_gemini_without_key_raises(self):
-        """Requesting gemini explicitly without a key raises ValueError."""
+        """Requesting gemini explicitly without a key raises ValueError (key checked before SDK import)."""
         with patch.dict(os.environ, {}, clear=True):
             with patch("ai_client.load_env"):
                 with pytest.raises(ValueError, match="GEMINI_API_KEY not set"):
@@ -54,6 +60,7 @@ class TestGetAiClient:
                 with pytest.raises(ValueError, match="ANTHROPIC_API_KEY not set"):
                     get_ai_client(vendor="anthropic")
 
+    @pytest.mark.skipif(not _has_genai, reason="google-genai not installed")
     def test_auto_detect_gemini_when_key_set(self):
         """Auto-detection returns gemini when GEMINI_API_KEY is set."""
         env = {"GEMINI_API_KEY": "test-key-123"}
@@ -64,6 +71,7 @@ class TestGetAiClient:
                     client, vendor = get_ai_client()
                     assert vendor == "gemini"
 
+    @pytest.mark.skipif(not _has_openai, reason="openai not installed")
     def test_auto_detect_openai_when_key_set(self):
         """Auto-detection returns openai when only OPENAI_API_KEY is set."""
         env = {"OPENAI_API_KEY": "test-key-456"}
@@ -74,6 +82,7 @@ class TestGetAiClient:
                     client, vendor = get_ai_client()
                     assert vendor == "openai"
 
+    @pytest.mark.skipif(not _has_anthropic, reason="anthropic not installed")
     def test_auto_detect_anthropic_when_key_set(self):
         """Auto-detection returns anthropic when only ANTHROPIC_API_KEY is set."""
         env = {"ANTHROPIC_API_KEY": "test-key-789"}
@@ -84,6 +93,7 @@ class TestGetAiClient:
                     client, vendor = get_ai_client()
                     assert vendor == "anthropic"
 
+    @pytest.mark.skipif(not _has_genai, reason="google-genai not installed")
     def test_gemini_takes_priority_over_openai_in_auto_detect(self):
         """When both GEMINI and OPENAI keys are set, gemini is preferred."""
         env = {"GEMINI_API_KEY": "gem-key", "OPENAI_API_KEY": "oai-key"}

@@ -40,24 +40,24 @@ def get_ai_client(vendor=None, api_key_env=None):
             raise ValueError("No AI API key found. Set GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in .env")
 
     if vendor == "gemini":
-        from google import genai
         key = os.environ.get(api_key_env or "GEMINI_API_KEY")
         if not key:
             raise ValueError("GEMINI_API_KEY not set in .env")
+        from google import genai
         return genai.Client(api_key=key), "gemini"
 
     elif vendor == "openai":
-        import openai
         key = os.environ.get(api_key_env or "OPENAI_API_KEY")
         if not key:
             raise ValueError("OPENAI_API_KEY not set in .env")
+        import openai
         return openai.OpenAI(api_key=key), "openai"
 
     elif vendor == "anthropic":
-        import anthropic
         key = os.environ.get(api_key_env or "ANTHROPIC_API_KEY")
         if not key:
             raise ValueError("ANTHROPIC_API_KEY not set in .env")
+        import anthropic
         return anthropic.Anthropic(api_key=key), "anthropic"
 
     else:
