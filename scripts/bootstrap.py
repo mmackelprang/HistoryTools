@@ -19,7 +19,7 @@ Usage:
 ZIP support:
     - Source can be a .zip file — extracted to a temp directory for scanning
     - ZIPs found inside the source are extracted recursively (handles zip-in-zip)
-    - Nested extraction limited to 5 levels deep (prevents zip bombs)
+    - Nested extraction limited to 5 levels deep (reduces risk of deeply nested archives)
     - Source files and folders are NEVER modified — extraction happens in temp dirs
 """
 
@@ -341,28 +341,49 @@ def get_processing_pipeline(file_type, dest_folder):
 
 # ── ZIP handling ────────────────────────────────────────────────────────────
 
+def _find_zip_files(directory):
+    """Find all ZIP files in a directory, case-insensitive."""
+    return [f for f in Path(directory).rglob("*")
+            if f.is_file() and f.suffix.lower() == ".zip"]
+
+
+def _safe_extract_zip(zip_path, extract_dir):
+    """Extract a ZIP file safely, guarding against Zip Slip (path traversal).
+    Returns True on success, False on failure."""
+    extract_dir = Path(extract_dir).resolve()
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(str(zip_path), 'r') as z:
+        for member in z.namelist():
+            # Resolve the target path and ensure it stays under extract_dir
+            target = (extract_dir / member).resolve()
+            if not str(target).startswith(str(extract_dir)):
+                print(f"  WARNING: Skipping suspicious ZIP entry (path traversal): {member}")
+                continue
+            z.extract(member, str(extract_dir))
+
+
 def extract_zips_recursive(directory, depth=0, max_depth=5):
     """Recursively extract all ZIP files found in a directory tree.
-    Extracts each ZIP into a subfolder named after the ZIP, then scans
-    the extracted contents for more ZIPs. Limits recursion depth to prevent
-    zip bombs."""
-    if depth > max_depth:
+    Extracts each ZIP into a subfolder, then scans extracted contents for more ZIPs.
+    Limits recursion depth to reduce risk of deeply nested archives."""
+    if depth >= max_depth:
         print(f"  WARNING: Max ZIP nesting depth ({max_depth}) reached, skipping deeper ZIPs")
         return 0
 
     extracted = 0
-    zip_files = list(Path(directory).rglob("*.zip"))
+    zip_files = _find_zip_files(directory)
 
     for zf in zip_files:
-        extract_dir = zf.parent / zf.stem
+        # Use a dedicated extraction folder name to avoid conflicts with
+        # existing folders that happen to share the ZIP's stem name
+        extract_dir = zf.parent / f"_extracted_{zf.stem}"
         if extract_dir.exists():
-            # Already extracted (from a previous run)
-            continue
+            continue  # already extracted
 
         try:
             print(f"  Extracting ZIP: {zf.name} ({_safe_file_size(zf) // 1024}KB)")
-            with zipfile.ZipFile(str(zf), 'r') as z:
-                z.extractall(str(extract_dir))
+            _safe_extract_zip(zf, extract_dir)
             extracted += 1
 
             # Recursively check extracted contents for more ZIPs
@@ -378,8 +399,9 @@ def extract_zips_recursive(directory, depth=0, max_depth=5):
 
 
 def prepare_source(source_path):
-    """Prepare source for scanning. If source is a ZIP file, extract to a temp
-    directory. Returns (effective_source_root, temp_dir_or_None).
+    """Prepare source for scanning. If source is a ZIP file or a directory
+    containing ZIPs, extract to a temp directory so the original source is
+    never modified. Returns (effective_source_root, temp_dir_or_None).
     Caller must clean up temp_dir when done."""
     source_path = Path(source_path)
 
@@ -388,9 +410,7 @@ def prepare_source(source_path):
         temp_dir = tempfile.mkdtemp(prefix="historytools_")
         print(f"Source is a ZIP file — extracting to temporary directory...")
         try:
-            with zipfile.ZipFile(str(source_path), 'r') as z:
-                z.extractall(temp_dir)
-            print(f"  Extracted {len(z.namelist())} items")
+            _safe_extract_zip(source_path, temp_dir)
         except zipfile.BadZipFile:
             print(f"ERROR: {source_path} is not a valid ZIP file")
             shutil.rmtree(temp_dir)
@@ -405,10 +425,10 @@ def prepare_source(source_path):
 
     if source_path.is_dir():
         # Source is a directory — check for ZIPs inside it
-        zip_count = len(list(source_path.rglob("*.zip")))
-        if zip_count:
+        zip_files = _find_zip_files(source_path)
+        if zip_files:
             # Copy source to temp dir so we don't modify the original
-            print(f"Found {zip_count} ZIP file(s) in source — copying to temp dir for extraction...")
+            print(f"Found {len(zip_files)} ZIP file(s) in source — copying to temp dir for extraction...")
             temp_dir = tempfile.mkdtemp(prefix="historytools_")
             shutil.copytree(str(source_path), os.path.join(temp_dir, "source"),
                             dirs_exist_ok=True)
@@ -418,6 +438,10 @@ def prepare_source(source_path):
                 print(f"  Extracted {extracted} ZIP(s)")
             return work_dir, temp_dir
         return source_path, None
+
+    if source_path.is_file():
+        print(f"ERROR: {source_path} is not a ZIP file or directory")
+        sys.exit(1)
 
     return source_path, None
 
@@ -814,9 +838,10 @@ def main():
         print(f"Scanning {source_root}...")
         plan = scan_source(source_root, dest_root, args.mode, exclude_dirs, exclude_exts)
 
-        # Record if source was a ZIP (for the plan metadata)
-        if temp_dir or source_path.suffix.lower() == ".zip":
-            plan["source_was_zip"] = str(source_path)
+        # Record if source required extraction (for the plan metadata)
+        if temp_dir:
+            plan["source_extracted_from"] = str(source_path)
+            plan["extraction_type"] = "zip" if source_path.suffix.lower() == ".zip" else "directory_with_zips"
 
         # Update plan path now that we know dest_root
         plan_path = Path(plan["dest_root"]) / "_bootstrap-plan.json"
