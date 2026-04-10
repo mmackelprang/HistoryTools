@@ -6,6 +6,7 @@ A CLI toolkit for digitizing, organizing, transcribing, and searching family arc
 
 | Step | Script | What Happens |
 |------|--------|-------------|
+| 0 | `bootstrap.py` | Scan, classify, and process an entire source folder in one command |
 | 1 | `verify_tools.py` | Checks that all required tools are installed |
 | 2 | `organize.py` | Classifies files by name/type, renames with dates, copies to organized folders |
 | 3 | `transcribe_pdfs.py` | Extracts text from PDFs (native text or Tesseract OCR) |
@@ -46,12 +47,34 @@ cp config.example.json config.json
 cp .env.example .env
 # Edit .env with your API keys (see docs/SETUP-API-KEYS.md)
 
-# 7. Preview what will happen
-python scripts/organize.py --dry-run
-
-# 8. Run the full pipeline
-python scripts/run_all.py
+# 7. Bootstrap — scan, classify, and process everything
+python scripts/bootstrap.py /path/to/your/scans --scan    # scan and classify (writes plan)
+python scripts/bootstrap.py --execute                     # run the full pipeline
 ```
+
+## Bootstrap (One-Command Processing)
+
+The fastest way to process a folder of scans, recordings, and photos:
+
+```bash
+# Scan source folder and preview classification
+python scripts/bootstrap.py /path/to/scans --scan
+
+# Review _bootstrap-plan.json (edit classifications if needed)
+
+# Execute the full pipeline
+python scripts/bootstrap.py --execute
+
+# Or do it interactively (scan + approve + execute)
+python scripts/bootstrap.py /path/to/scans
+
+# Merge new files into an existing archive
+python scripts/bootstrap.py /path/to/new-scans --scan --mode merge
+```
+
+Bootstrap is fully restartable — if interrupted, just run `--execute` again.
+It skips already-copied files, already-transcribed files, and already-formatted
+transcripts, picking up where it left off.
 
 ## AI-Powered Features
 

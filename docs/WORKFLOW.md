@@ -10,6 +10,18 @@ This guide walks through the recommended order for processing a family archive.
 
 ## Step-by-Step
 
+### 0. Bootstrap (Recommended for New Archives)
+
+If you're starting from scratch with a folder of scans, use bootstrap to do everything at once:
+
+```bash
+python scripts/bootstrap.py /path/to/source --scan    # classify and preview
+python scripts/bootstrap.py --execute                  # run full pipeline
+```
+
+Bootstrap runs all the steps below automatically. You can also run each step individually
+if you prefer more control.
+
 ### 1. Organize Files
 
 ```bash

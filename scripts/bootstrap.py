@@ -1,0 +1,749 @@
+#!/usr/bin/env python3
+"""
+Bootstrap — Scan, classify, and process an entire source folder into an organized archive.
+
+Phase 1 (scan): Recursively walk a source directory, classify every file by type,
+filename patterns, and folder context. Produce _bootstrap-plan.json for review.
+
+Phase 2 (execute): Read the approved plan and run the full processing pipeline:
+copy → transcribe → format → rename → date-detect → report.
+
+Usage:
+    python bootstrap.py /path/to/source --scan                # scan and classify
+    python bootstrap.py /path/to/source --scan --mode merge   # merge into existing
+    python bootstrap.py --execute                              # run the approved plan
+    python bootstrap.py /path/to/source                        # interactive: scan + approve + execute
+    python bootstrap.py --dry-run /path/to/source --scan       # preview scan
+"""
+
+import os
+import re
+import sys
+import json
+import shutil
+import hashlib
+import argparse
+import subprocess
+from pathlib import Path
+from datetime import datetime
+
+sys.path.insert(0, str(Path(__file__).parent))
+from config import load_config
+
+TODAY = datetime.now().strftime("%Y-%m-%d")
+SCRIPTS_DIR = Path(__file__).parent
+
+# ── File type classification ────────────────────────────────────────────────
+
+AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".wma"}
+VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".wmv"}
+PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".heic"}
+DOCUMENT_EXTS = {".pdf", ".doc", ".docx", ".txt", ".rtf"}
+SPREADSHEET_EXTS = {".xls", ".xlsx", ".csv"}
+EMAIL_EXTS = {".eml", ".mbox", ".pst"}
+GENEALOGY_EXTS = {".gedcom", ".ged"}
+
+def get_file_type(ext):
+    """Classify a file by its extension."""
+    ext = ext.lower()
+    if ext in AUDIO_EXTS:
+        return "audio"
+    if ext in VIDEO_EXTS:
+        return "video"
+    if ext in PHOTO_EXTS:
+        return "photo"
+    if ext in DOCUMENT_EXTS:
+        return "document"
+    if ext in SPREADSHEET_EXTS:
+        return "spreadsheet"
+    if ext in EMAIL_EXTS:
+        return "email"
+    if ext in GENEALOGY_EXTS:
+        return "genealogy"
+    return "unknown"
+
+
+# ── Folder hint classification ──────────────────────────────────────────────
+
+# Map of lowercase keywords → destination folder
+# These are checked against source folder names to boost classification
+FOLDER_HINTS = {
+    # Correspondence
+    "letter": "Correspondence/Letters",
+    "letters": "Correspondence/Letters",
+    "card": "Correspondence/Cards",
+    "cards": "Correspondence/Cards",
+    "postcard": "Correspondence/Cards",
+    "correspondence": "Correspondence/Letters",
+    # Journals
+    "journal": "Journals",
+    "journals": "Journals",
+    "diary": "Journals",
+    "diaries": "Journals",
+    # Documents
+    "church": "Documents/Church",
+    "religious": "Documents/Church",
+    "school": "Documents/Education",
+    "education": "Documents/Education",
+    "homework": "Documents/Education",
+    "legal": "Documents/Legal",
+    "certificate": "Documents/Legal",
+    "employment": "Documents/Employment",
+    "work": "Documents/Employment",
+    "writing": "Documents/Writings",
+    "writings": "Documents/Writings",
+    "essay": "Documents/Writings",
+    "recipe": "Documents/Recipes",
+    "recipes": "Documents/Recipes",
+    "cookbook": "Documents/Recipes",
+    # Financial
+    "financial": "Financial",
+    "finance": "Financial",
+    "tax": "Financial/Taxes",
+    "taxes": "Financial/Taxes",
+    "insurance": "Financial/Insurance",
+    "bill": "Financial/BillsAndReceipts",
+    "bills": "Financial/BillsAndReceipts",
+    "receipt": "Financial/BillsAndReceipts",
+    "receipts": "Financial/BillsAndReceipts",
+    # Medical
+    "medical": "Medical",
+    "dental": "Medical/Dental",
+    "health": "Medical",
+    # Media
+    "photo": "Media/Photos",
+    "photos": "Media/Photos",
+    "picture": "Media/Photos",
+    "pictures": "Media/Photos",
+    "audio": "Media/Audio/FamilyRecordings",
+    "recording": "Media/Audio/FamilyRecordings",
+    "recordings": "Media/Audio/FamilyRecordings",
+    "tape": "Media/Audio/CassetteTapes",
+    "tapes": "Media/Audio/CassetteTapes",
+    "cassette": "Media/Audio/CassetteTapes",
+    "music": "Media/Audio/Songs",
+    "song": "Media/Audio/Songs",
+    "songs": "Media/Audio/Songs",
+    "video": "Media/Video",
+    "videos": "Media/Video",
+    "movie": "Media/Video",
+    "movies": "Media/Video",
+    # Other
+    "memory": "Memories",
+    "memories": "Memories",
+    "memorial": "Memories",
+    "obituary": "Memories",
+}
+
+# Filename pattern keywords → destination folder
+FILENAME_PATTERNS = {
+    "letter": "Correspondence/Letters",
+    "postcard": "Correspondence/Cards",
+    "card": "Correspondence/Cards",
+    "journal": "Journals",
+    "diary": "Journals",
+    "obituary": "Memories",
+    "eulogy": "Memories",
+    "memoir": "Memories",
+    "recipe": "Documents/Recipes",
+}
+
+
+def classify_by_folder_hints(source_path, source_root):
+    """Use source folder names to suggest classification."""
+    try:
+        rel = source_path.relative_to(source_root)
+    except ValueError:
+        return None, "none"
+
+    # Check each folder component for hints
+    for part in rel.parts[:-1]:  # exclude the filename
+        part_lower = part.lower()
+        for keyword, dest_folder in FOLDER_HINTS.items():
+            if keyword in part_lower:
+                return dest_folder, "folder_hint"
+
+    return None, "none"
+
+
+def classify_by_filename(filename):
+    """Use filename patterns to suggest classification."""
+    stem_lower = Path(filename).stem.lower().replace("-", " ").replace("_", " ")
+    for keyword, dest_folder in FILENAME_PATTERNS.items():
+        if keyword in stem_lower:
+            return dest_folder, "filename_pattern"
+    return None, "none"
+
+
+def classify_by_type_default(file_type):
+    """Default classification based on file type alone."""
+    defaults = {
+        "audio": "Media/Audio/FamilyRecordings",
+        "video": "Media/Video",
+        "photo": "Media/Photos",
+        "document": None,  # documents need more context
+        "email": "_imports/EmailArchives",
+        "genealogy": "_imports",
+        "spreadsheet": "NeedsReview",
+        "unknown": "Unprocessed",
+    }
+    dest = defaults.get(file_type)
+    if dest:
+        return dest, "type_default"
+    return None, "none"
+
+
+def classify_file(source_path, source_root):
+    """Classify a file using all available signals. Returns (dest_folder, classification_source, confidence)."""
+    ext = source_path.suffix.lower()
+    file_type = get_file_type(ext)
+
+    # Spreadsheets always go to NeedsReview
+    if file_type == "spreadsheet":
+        return "NeedsReview", "needs_user_classification", "low"
+
+    # Unknown types go to Unprocessed
+    if file_type == "unknown":
+        return "Unprocessed", "unknown_extension", "low"
+
+    # Email and genealogy go to imports
+    if file_type in ("email", "genealogy"):
+        dest, source = classify_by_type_default(file_type)
+        return dest, source, "high"
+
+    # Try folder hints first (strongest signal)
+    dest, source = classify_by_folder_hints(source_path, source_root)
+    if dest:
+        return dest, source, "high"
+
+    # Try filename patterns
+    dest, source = classify_by_filename(source_path.name)
+    if dest:
+        return dest, source, "medium"
+
+    # Fall back to type defaults
+    dest, source = classify_by_type_default(file_type)
+    if dest:
+        return dest, source, "medium"
+
+    # Can't classify
+    return "NeedsReview", "unclassifiable", "low"
+
+
+# ── Date extraction ─────────────────────────────────────────────────────────
+
+def parse_date_from_filename(filename):
+    """Extract date from filename. Returns 'YYYY-MM-DD' or 'undated'."""
+    stem = Path(filename).stem
+
+    # YYYYMMDD
+    m = re.search(r'(\d{4})(\d{2})(\d{2})', stem)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1800 <= y <= 2030 and 0 <= mo <= 12 and 0 <= d <= 31:
+            return f"{y:04d}-{mo:02d}-{d:02d}"
+
+    # MMDDYYYY
+    m = re.match(r'^(\d{2})(\d{2})(\d{4})(?:_|$)', stem)
+    if m:
+        mo, d, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1800 <= y <= 2030 and 1 <= mo <= 12 and 1 <= d <= 31:
+            return f"{y:04d}-{mo:02d}-{d:02d}"
+
+    # YYYY_MM_DD_HH_MM_SS (scanner timestamp)
+    m = re.match(r'^(\d{4})_(\d{2})_(\d{2})_\d{2}_\d{2}_\d{2}', stem)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 2000 <= y <= 2030:
+            return f"{y:04d}-{mo:02d}-{d:02d}"
+
+    # Patterns like "Something - Jan 2021" or "Something JAN 2021"
+    months = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+              "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+    m = re.search(r'(\w{3})\s*(\d{4})', stem, re.IGNORECASE)
+    if m and m.group(1).lower() in months:
+        mo = months[m.group(1).lower()]
+        y = int(m.group(2))
+        if 1800 <= y <= 2030:
+            return f"{y:04d}-{mo:02d}-00"
+
+    # Just a year
+    m = re.search(r'((?:19|20)\d{2})', stem)
+    if m:
+        y = int(m.group(1))
+        if 1900 <= y <= 2030:
+            return f"{y:04d}-00-00"
+
+    return "undated"
+
+
+def make_slug(filename):
+    """Convert a filename to a kebab-case slug."""
+    stem = Path(filename).stem
+    # Remove date-like prefixes
+    stem = re.sub(r'^\d{4}[-_]\d{2}[-_]\d{2}[-_]?', '', stem)
+    stem = re.sub(r'^\d{8}[-_]?', '', stem)
+    stem = re.sub(r'^\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}[-_]?', '', stem)
+    # Convert to slug
+    slug = stem.lower().strip()
+    slug = re.sub(r'[^a-z0-9]+', '-', slug)
+    slug = slug.strip('-')
+    return slug or "unnamed"
+
+
+def _safe_file_size(filepath):
+    """Get file size, returning 0 on any error (broken symlink, permissions, etc.)."""
+    try:
+        return filepath.stat().st_size
+    except (OSError, PermissionError):
+        return 0
+
+
+# ── MD5 hashing for duplicate detection ─────────────────────────────────────
+
+def md5_hash(filepath, chunk_size=8192):
+    """Compute MD5 hash of a file."""
+    h = hashlib.md5()
+    with open(filepath, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+# ── Processing pipeline mapping ─────────────────────────────────────────────
+
+def get_processing_pipeline(file_type, dest_folder):
+    """Determine which processing steps apply to this file."""
+    pipeline = ["copy"]
+
+    if file_type == "document" and dest_folder not in ("NeedsReview", "Unprocessed"):
+        pipeline.extend(["transcribe", "format", "rename", "detect_date"])
+    elif file_type == "audio" and dest_folder not in ("NeedsReview", "Unprocessed"):
+        pipeline.extend(["transcribe_audio", "format", "rename"])
+    elif file_type == "photo":
+        pipeline.append("catalog_photos")
+    # video, email, genealogy, spreadsheet, unknown: just copy
+
+    return pipeline
+
+
+# ── Scan phase ──────────────────────────────────────────────────────────────
+
+def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts):
+    """Scan source directory and classify all files. Returns plan dict."""
+    source_root = Path(source_root)
+    dest_root = Path(dest_root)
+
+    # In merge mode, build hash inventory of existing archive
+    existing_hashes = {}
+    if mode == "merge" and dest_root.exists():
+        print("Building inventory of existing archive for merge...")
+        for f in dest_root.rglob("*"):
+            if f.is_file() and f.suffix.lower() not in {".md", ".json"}:
+                try:
+                    existing_hashes[md5_hash(f)] = str(f.relative_to(dest_root))
+                except Exception:
+                    pass
+        print(f"  {len(existing_hashes)} files indexed")
+
+    files = []
+    by_type = {}
+    by_dest = {}
+    unprocessed_types = {}
+    needs_review_types = {}
+    dupes = 0
+
+    for root, dirs, filenames in os.walk(source_root):
+        # Filter excluded directories
+        dirs[:] = [d for d in dirs if d not in exclude_dirs]
+
+        for filename in sorted(filenames):
+            filepath = Path(root) / filename
+            ext = filepath.suffix.lower()
+
+            if ext in exclude_exts:
+                continue
+
+            file_type = get_file_type(ext)
+            dest_folder, class_source, confidence = classify_file(filepath, source_root)
+            date_prefix = parse_date_from_filename(filename)
+            slug = make_slug(filename)
+            proposed_name = f"{date_prefix}_{slug}{ext}" if slug else f"{date_prefix}{ext}"
+
+            # Determine subfolder (year or Undated)
+            dest_subfolder = None
+            if date_prefix != "undated" and date_prefix[:4] != "0000":
+                dest_subfolder = date_prefix[:4]
+            elif dest_folder not in ("NeedsReview", "Unprocessed", "_imports/EmailArchives", "_imports/SMSExports", "_imports"):
+                dest_subfolder = "Undated"
+
+            processing = get_processing_pipeline(file_type, dest_folder)
+
+            # Check for duplicates in merge mode
+            is_duplicate = False
+            duplicate_of = None
+            if mode == "merge" and existing_hashes:
+                try:
+                    file_hash = md5_hash(filepath)
+                    if file_hash in existing_hashes:
+                        is_duplicate = True
+                        duplicate_of = existing_hashes[file_hash]
+                        dupes += 1
+                except Exception:
+                    pass
+
+            entry = {
+                "source_path": str(filepath.relative_to(source_root)).replace("\\", "/"),
+                "dest_folder": dest_folder,
+                "dest_subfolder": dest_subfolder,
+                "proposed_name": proposed_name,
+                "file_type": file_type,
+                "file_size": _safe_file_size(filepath),
+                "classification_source": class_source,
+                "classification_confidence": confidence,
+                "detected_date": date_prefix if date_prefix != "undated" else None,
+                "processing": processing,
+                "approved": not is_duplicate,  # duplicates default to not approved
+            }
+
+            if is_duplicate:
+                entry["duplicate_of"] = duplicate_of
+                entry["notes"] = f"Duplicate of {duplicate_of}"
+
+            if file_type == "unknown":
+                ext_key = ext or "(no extension)"
+                unprocessed_types.setdefault(ext_key, {"count": 0, "example": filename})
+                unprocessed_types[ext_key]["count"] += 1
+
+            if dest_folder == "NeedsReview":
+                ext_key = ext or "(no extension)"
+                needs_review_types.setdefault(ext_key, {"count": 0, "example": filename})
+                needs_review_types[ext_key]["count"] += 1
+
+            if file_type == "spreadsheet":
+                entry["notes"] = "Spreadsheet — requires manual classification"
+            elif file_type == "unknown":
+                entry["notes"] = f"Unknown file type {ext} — no processing tooling available"
+
+            files.append(entry)
+
+            by_type[file_type] = by_type.get(file_type, 0) + 1
+            by_dest[dest_folder] = by_dest.get(dest_folder, 0) + 1
+
+    plan = {
+        "source_root": str(source_root),
+        "dest_root": str(dest_root),
+        "mode": mode,
+        "scan_date": TODAY,
+        "summary": {
+            "total_files": len(files),
+            "by_type": by_type,
+            "by_destination": dict(sorted(by_dest.items())),
+            "needs_review": sum(1 for f in files if f["dest_folder"] == "NeedsReview"),
+            "unprocessable": sum(1 for f in files if f["dest_folder"] == "Unprocessed"),
+            "duplicates_detected": dupes,
+        },
+        "files": files,
+        "unprocessed_types": unprocessed_types,
+        "needs_review_types": needs_review_types,
+    }
+
+    return plan
+
+
+def print_scan_summary(plan):
+    """Print a human-readable scan summary."""
+    s = plan["summary"]
+    print(f"\nFound {s['total_files']} files\n")
+
+    print("Classification Summary:")
+    for dest, count in sorted(s["by_destination"].items()):
+        print(f"  {dest:40s} {count} files")
+
+    if plan["needs_review_types"]:
+        print(f"\nNeedsReview (requires manual classification):")
+        for ext, info in plan["needs_review_types"].items():
+            print(f"  {info['count']}x {ext} — e.g., {info['example']}")
+
+    if plan["unprocessed_types"]:
+        print(f"\nUnknown file types (stored in Unprocessed/):")
+        for ext, info in plan["unprocessed_types"].items():
+            print(f"  {ext:12s} {info['count']} files — e.g., {info['example']}")
+
+    if s["duplicates_detected"]:
+        print(f"\nPotential duplicates: {s['duplicates_detected']} files (marked not-approved)")
+
+    # Estimate processing costs
+    pdf_count = sum(1 for f in plan["files"] if f["file_type"] == "document" and "transcribe" in f.get("processing", []))
+    audio_count = sum(1 for f in plan["files"] if f["file_type"] == "audio" and "transcribe_audio" in f.get("processing", []))
+    if pdf_count or audio_count:
+        print(f"\nProcessing plan:")
+        if pdf_count:
+            print(f"  {pdf_count} documents → transcribe + format + rename")
+        if audio_count:
+            print(f"  {audio_count} audio files → transcribe + format + rename")
+
+
+# ── Execute phase ───────────────────────────────────────────────────────────
+
+def copy_files(plan):
+    """Copy all approved files to their destinations."""
+    dest_root = Path(plan["dest_root"])
+    source_root = Path(plan["source_root"])
+    approved = [f for f in plan["files"] if f.get("approved", True)]
+
+    copied = 0
+    skipped = 0
+
+    for i, entry in enumerate(approved, 1):
+        src = source_root / entry["source_path"]
+        dest_folder = dest_root / entry["dest_folder"]
+        if entry.get("dest_subfolder"):
+            dest_folder = dest_folder / entry["dest_subfolder"]
+        dest = dest_folder / entry["proposed_name"]
+
+        if dest.exists():
+            # Check if this is a collision (different source) vs already-copied (same source)
+            if src.exists() and dest.stat().st_size != src.stat().st_size:
+                print(f"  WARNING: Destination collision — {entry['proposed_name']} already exists with different content")
+            skipped += 1
+            continue
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            shutil.copy2(str(src), str(dest))
+            copied += 1
+            if i % 50 == 0 or i == len(approved):
+                print(f"  [{i}/{len(approved)}] {copied} copied, {skipped} skipped")
+        except Exception as e:
+            print(f"  ERROR copying {entry['source_path']}: {e}")
+            skipped += 1
+
+    print(f"  Done: {copied} copied, {skipped} skipped")
+    return copied
+
+
+def run_script(script_name, extra_args=None):
+    """Run a toolkit script and return success."""
+    script_path = SCRIPTS_DIR / script_name
+    cmd = [sys.executable, str(script_path)]
+    if extra_args:
+        cmd.extend(extra_args)
+    result = subprocess.run(cmd)
+    return result.returncode == 0
+
+
+def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_override=None):
+    """Execute all stages of the bootstrap plan."""
+    dest_root = Path(plan["dest_root"])
+
+    # Ensure config.json exists for downstream scripts
+    config_path = Path(config_path_override) if config_path_override else SCRIPTS_DIR.parent / "config.json"
+    if not config_path.exists():
+        temp_config = {
+            "source_root": plan["source_root"],
+            "dest_root": plan["dest_root"],
+            "mode": plan["mode"],
+        }
+        with open(config_path, "w") as f:
+            json.dump(temp_config, f, indent=2)
+        print(f"Created temporary config.json")
+
+    # Pass config path to all downstream scripts
+    config_args = ["--config", str(config_path)] if config_path_override else []
+
+    # Stage 1: Copy
+    print(f"\n{'=' * 60}")
+    print("Stage 1: Copy Files")
+    print(f"{'=' * 60}")
+    copied = copy_files(plan)
+
+    # Note: do NOT exit early if copied == 0 — downstream stages need to run
+    # on previously-copied-but-unprocessed files (crash recovery scenario)
+
+    # Stage 2: Transcribe PDFs
+    if not skip_transcribe:
+        has_pdfs = any(
+            f["file_type"] == "document" and "transcribe" in f.get("processing", [])
+            for f in plan["files"] if f.get("approved", True)
+        )
+        if has_pdfs:
+            print(f"\n{'=' * 60}")
+            print("Stage 2: Transcribe PDFs")
+            print(f"{'=' * 60}")
+            run_script("transcribe_pdfs_gemini.py", config_args)
+
+    # Stage 3: Transcribe Audio
+    if not skip_transcribe:
+        has_audio = any(
+            f["file_type"] == "audio" and "transcribe_audio" in f.get("processing", [])
+            for f in plan["files"] if f.get("approved", True)
+        )
+        if has_audio:
+            print(f"\n{'=' * 60}")
+            print("Stage 3: Transcribe Audio")
+            print(f"{'=' * 60}")
+            run_script("transcribe_audio_assemblyai.py", config_args)
+
+    # Stage 4: Catalog Photos
+    has_photos = any(f["file_type"] == "photo" for f in plan["files"] if f.get("approved", True))
+    if has_photos:
+        print(f"\n{'=' * 60}")
+        print("Stage 4: Catalog Photos")
+        print(f"{'=' * 60}")
+        run_script("catalog_photos.py", config_args)
+
+    # Stage 5: Detect Duplicates
+    print(f"\n{'=' * 60}")
+    print("Stage 5: Detect Duplicates")
+    print(f"{'=' * 60}")
+    run_script("handle_duplicates.py", config_args)
+
+    # Stage 6: Format Transcripts
+    if not skip_format:
+        print(f"\n{'=' * 60}")
+        print("Stage 6: Format Transcripts")
+        print(f"{'=' * 60}")
+        run_script("format_transcripts.py", config_args)
+
+    # Stage 7: Propose Renames
+    print(f"\n{'=' * 60}")
+    print("Stage 7: Propose Renames")
+    print(f"{'=' * 60}")
+    run_script("propose_renames.py", config_args)
+
+    # Stage 8: Detect Dates
+    print(f"\n{'=' * 60}")
+    print("Stage 8: Detect Dates")
+    print(f"{'=' * 60}")
+    run_script("detect_dates.py", config_args)
+
+    # Stage 9: Generate Report
+    print(f"\n{'=' * 60}")
+    print("Stage 9: Generate Report")
+    print(f"{'=' * 60}")
+    run_script("generate_report.py", config_args)
+
+    # Final summary
+    print(f"\n{'=' * 60}")
+    print("Bootstrap complete!")
+    print(f"{'=' * 60}")
+    print(f"\nNext steps:")
+    print(f"  1. Review rename proposals: _rename-proposals.md")
+    print(f"     Apply: python scripts/apply_renames.py")
+    print(f"  2. Review date proposals: _date-proposals.json")
+    print(f"     Apply: python scripts/detect_dates.py --apply")
+    print(f"  3. Classify files in NeedsReview/ manually")
+    print(f"  4. Check Unprocessed/ for files needing future tooling")
+
+
+# ── Main ────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Bootstrap — scan, classify, and process a source folder into an organized archive"
+    )
+    parser.add_argument("source", nargs="?", help="Source directory to scan")
+    parser.add_argument("--scan", action="store_true", help="Scan and classify only (produce plan)")
+    parser.add_argument("--execute", action="store_true", help="Execute an existing plan")
+    parser.add_argument("--mode", default="standalone", choices=["standalone", "merge"],
+                        help="standalone (new archive) or merge (add to existing)")
+    parser.add_argument("--config", default=None, help="Path to config.json")
+    parser.add_argument("--skip-transcribe", action="store_true", help="Skip transcription stages")
+    parser.add_argument("--skip-format", action="store_true", help="Skip formatting stage")
+    parser.add_argument("--dry-run", action="store_true", help="Preview without changes")
+    args = parser.parse_args()
+
+    # Load config for dest_root and exclusions
+    try:
+        config = load_config(args.config)
+        dest_root = config["dest_root"]
+        exclude_dirs = config["exclude_dirs"]
+        exclude_exts = config["exclude_exts"]
+    except (ValueError, FileNotFoundError):
+        if args.source:
+            dest_root = Path(args.source) / "Organized"
+            exclude_dirs = {".organizer", ".trashbox", "Organized", "__pycache__"}
+            exclude_exts = {".ini", ".lnk", ".aup3", ".db", ".tmp"}
+        elif args.execute:
+            # In execute mode, we'll get dest_root from the plan file
+            dest_root = None
+        else:
+            print("ERROR: Provide a source directory or create config.json")
+            sys.exit(1)
+
+    # Execute mode — load plan first, derive dest_root from it
+    if args.execute:
+        # Try to find plan file
+        if dest_root:
+            plan_path = Path(dest_root) / "_bootstrap-plan.json"
+        else:
+            plan_path = Path("_bootstrap-plan.json")
+
+        if not plan_path.exists():
+            print(f"ERROR: No plan found at {plan_path}")
+            print("Run with --scan first to generate a plan.")
+            sys.exit(1)
+
+        with open(plan_path, "r", encoding="utf-8") as f:
+            plan = json.load(f)
+
+        if args.dry_run:
+            approved = [f for f in plan["files"] if f.get("approved", True)]
+            print(f"Would process {len(approved)} files")
+            return
+
+        execute_plan(plan, args.skip_transcribe, args.skip_format, args.config)
+        return
+
+    # Scan mode (or interactive)
+    if not args.source:
+        print("ERROR: Provide a source directory to scan.")
+        parser.print_help()
+        sys.exit(1)
+
+    source_root = Path(args.source)
+    if not source_root.exists():
+        print(f"ERROR: Source directory not found: {source_root}")
+        sys.exit(1)
+
+    print(f"Scanning {source_root}...")
+    plan = scan_source(source_root, dest_root, args.mode, exclude_dirs, exclude_exts)
+
+    # Update plan path now that we know dest_root
+    plan_path = Path(plan["dest_root"]) / "_bootstrap-plan.json"
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print_scan_summary(plan)
+
+    if args.dry_run:
+        print(f"\n--- DRY RUN: no plan saved ---")
+        return
+
+    with open(plan_path, "w", encoding="utf-8") as f:
+        json.dump(plan, f, indent=2, ensure_ascii=False)
+    print(f"\nPlan saved to {plan_path}")
+
+    if args.scan:
+        print(f"Review the plan, then run: python scripts/bootstrap.py --execute")
+        return
+
+    # Interactive mode: ask for approval then execute
+    print(f"\nProceed with processing? [y/N] ", end="")
+    try:
+        answer = input().strip().lower()
+    except EOFError:
+        answer = "n"
+
+    if answer in ("y", "yes"):
+        execute_plan(plan, args.skip_transcribe, args.skip_format, args.config)
+    else:
+        print(f"Plan saved. Run later with: python scripts/bootstrap.py --execute")
+
+
+if __name__ == "__main__":
+    main()
