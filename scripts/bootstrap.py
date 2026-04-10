@@ -10,10 +10,17 @@ copy → transcribe → format → rename → date-detect → report.
 
 Usage:
     python bootstrap.py /path/to/source --scan                # scan and classify
+    python bootstrap.py /path/to/archive.zip --scan           # scan a ZIP file as source
     python bootstrap.py /path/to/source --scan --mode merge   # merge into existing
     python bootstrap.py --execute                              # run the approved plan
     python bootstrap.py /path/to/source                        # interactive: scan + approve + execute
     python bootstrap.py --dry-run /path/to/source --scan       # preview scan
+
+ZIP support:
+    - Source can be a .zip file — extracted to a temp directory for scanning
+    - ZIPs found inside the source are extracted recursively (handles zip-in-zip)
+    - Nested extraction limited to 5 levels deep (reduces risk of deeply nested archives)
+    - Source files and folders are NEVER modified — extraction happens in temp dirs
 """
 
 import os
@@ -22,6 +29,8 @@ import sys
 import json
 import shutil
 import hashlib
+import zipfile
+import tempfile
 import argparse
 import subprocess
 from pathlib import Path
@@ -330,6 +339,113 @@ def get_processing_pipeline(file_type, dest_folder):
     return pipeline
 
 
+# ── ZIP handling ────────────────────────────────────────────────────────────
+
+def _find_zip_files(directory):
+    """Find all ZIP files in a directory, case-insensitive."""
+    return [f for f in Path(directory).rglob("*")
+            if f.is_file() and f.suffix.lower() == ".zip"]
+
+
+def _safe_extract_zip(zip_path, extract_dir):
+    """Extract a ZIP file safely, guarding against Zip Slip (path traversal).
+    Returns True on success, False on failure."""
+    extract_dir = Path(extract_dir).resolve()
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(str(zip_path), 'r') as z:
+        for member in z.namelist():
+            # Resolve the target path and ensure it stays under extract_dir
+            target = (extract_dir / member).resolve()
+            if not str(target).startswith(str(extract_dir)):
+                print(f"  WARNING: Skipping suspicious ZIP entry (path traversal): {member}")
+                continue
+            z.extract(member, str(extract_dir))
+
+
+def extract_zips_recursive(directory, depth=0, max_depth=5):
+    """Recursively extract all ZIP files found in a directory tree.
+    Extracts each ZIP into a subfolder, then scans extracted contents for more ZIPs.
+    Limits recursion depth to reduce risk of deeply nested archives."""
+    if depth >= max_depth:
+        print(f"  WARNING: Max ZIP nesting depth ({max_depth}) reached, skipping deeper ZIPs")
+        return 0
+
+    extracted = 0
+    zip_files = _find_zip_files(directory)
+
+    for zf in zip_files:
+        # Use a dedicated extraction folder name to avoid conflicts with
+        # existing folders that happen to share the ZIP's stem name
+        extract_dir = zf.parent / f"_extracted_{zf.stem}"
+        if extract_dir.exists():
+            continue  # already extracted
+
+        try:
+            print(f"  Extracting ZIP: {zf.name} ({_safe_file_size(zf) // 1024}KB)")
+            _safe_extract_zip(zf, extract_dir)
+            extracted += 1
+
+            # Recursively check extracted contents for more ZIPs
+            nested = extract_zips_recursive(extract_dir, depth + 1, max_depth)
+            extracted += nested
+
+        except zipfile.BadZipFile:
+            print(f"  WARNING: {zf.name} is not a valid ZIP file, skipping")
+        except Exception as e:
+            print(f"  WARNING: Failed to extract {zf.name}: {e}")
+
+    return extracted
+
+
+def prepare_source(source_path):
+    """Prepare source for scanning. If source is a ZIP file or a directory
+    containing ZIPs, extract to a temp directory so the original source is
+    never modified. Returns (effective_source_root, temp_dir_or_None).
+    Caller must clean up temp_dir when done."""
+    source_path = Path(source_path)
+
+    if source_path.is_file() and source_path.suffix.lower() == ".zip":
+        # Source is a ZIP file — extract to temp directory
+        temp_dir = tempfile.mkdtemp(prefix="historytools_")
+        print(f"Source is a ZIP file — extracting to temporary directory...")
+        try:
+            _safe_extract_zip(source_path, temp_dir)
+        except zipfile.BadZipFile:
+            print(f"ERROR: {source_path} is not a valid ZIP file")
+            shutil.rmtree(temp_dir)
+            sys.exit(1)
+
+        # Check for nested ZIPs
+        nested = extract_zips_recursive(temp_dir)
+        if nested:
+            print(f"  Extracted {nested} nested ZIP(s)")
+
+        return Path(temp_dir), temp_dir
+
+    if source_path.is_dir():
+        # Source is a directory — check for ZIPs inside it
+        zip_files = _find_zip_files(source_path)
+        if zip_files:
+            # Copy source to temp dir so we don't modify the original
+            print(f"Found {len(zip_files)} ZIP file(s) in source — copying to temp dir for extraction...")
+            temp_dir = tempfile.mkdtemp(prefix="historytools_")
+            shutil.copytree(str(source_path), os.path.join(temp_dir, "source"),
+                            dirs_exist_ok=True)
+            work_dir = Path(temp_dir) / "source"
+            extracted = extract_zips_recursive(work_dir)
+            if extracted:
+                print(f"  Extracted {extracted} ZIP(s)")
+            return work_dir, temp_dir
+        return source_path, None
+
+    if source_path.is_file():
+        print(f"ERROR: {source_path} is not a ZIP file or directory")
+        sys.exit(1)
+
+    return source_path, None
+
+
 # ── Scan phase ──────────────────────────────────────────────────────────────
 
 def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts):
@@ -365,6 +481,10 @@ def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts):
             ext = filepath.suffix.lower()
 
             if ext in exclude_exts:
+                continue
+
+            # Skip ZIP files (already extracted by prepare_source)
+            if ext == ".zip":
                 continue
 
             file_type = get_file_type(ext)
@@ -706,43 +826,58 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    source_root = Path(args.source)
-    if not source_root.exists():
-        print(f"ERROR: Source directory not found: {source_root}")
+    source_path = Path(args.source)
+    if not source_path.exists():
+        print(f"ERROR: Source not found: {source_path}")
         sys.exit(1)
 
-    print(f"Scanning {source_root}...")
-    plan = scan_source(source_root, dest_root, args.mode, exclude_dirs, exclude_exts)
+    # Handle ZIP files and extract nested ZIPs
+    source_root, temp_dir = prepare_source(source_path)
 
-    # Update plan path now that we know dest_root
-    plan_path = Path(plan["dest_root"]) / "_bootstrap-plan.json"
-    plan_path.parent.mkdir(parents=True, exist_ok=True)
-
-    print_scan_summary(plan)
-
-    if args.dry_run:
-        print(f"\n--- DRY RUN: no plan saved ---")
-        return
-
-    with open(plan_path, "w", encoding="utf-8") as f:
-        json.dump(plan, f, indent=2, ensure_ascii=False)
-    print(f"\nPlan saved to {plan_path}")
-
-    if args.scan:
-        print(f"Review the plan, then run: python scripts/bootstrap.py --execute")
-        return
-
-    # Interactive mode: ask for approval then execute
-    print(f"\nProceed with processing? [y/N] ", end="")
     try:
-        answer = input().strip().lower()
-    except EOFError:
-        answer = "n"
+        print(f"Scanning {source_root}...")
+        plan = scan_source(source_root, dest_root, args.mode, exclude_dirs, exclude_exts)
 
-    if answer in ("y", "yes"):
-        execute_plan(plan, args.skip_transcribe, args.skip_format, args.config)
-    else:
-        print(f"Plan saved. Run later with: python scripts/bootstrap.py --execute")
+        # Record if source required extraction (for the plan metadata)
+        if temp_dir:
+            plan["source_extracted_from"] = str(source_path)
+            plan["extraction_type"] = "zip" if source_path.suffix.lower() == ".zip" else "directory_with_zips"
+
+        # Update plan path now that we know dest_root
+        plan_path = Path(plan["dest_root"]) / "_bootstrap-plan.json"
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+
+        print_scan_summary(plan)
+
+        if args.dry_run:
+            print(f"\n--- DRY RUN: no plan saved ---")
+            return
+
+        with open(plan_path, "w", encoding="utf-8") as f:
+            json.dump(plan, f, indent=2, ensure_ascii=False)
+        print(f"\nPlan saved to {plan_path}")
+
+        if args.scan:
+            print(f"Review the plan, then run: python scripts/bootstrap.py --execute")
+            return
+
+        # Interactive mode: ask for approval then execute
+        print(f"\nProceed with processing? [y/N] ", end="")
+        try:
+            answer = input().strip().lower()
+        except EOFError:
+            answer = "n"
+
+        if answer in ("y", "yes"):
+            execute_plan(plan, args.skip_transcribe, args.skip_format, args.config)
+        else:
+            print(f"Plan saved. Run later with: python scripts/bootstrap.py --execute")
+
+    finally:
+        # Clean up temp directory if we extracted from a ZIP
+        if temp_dir and Path(temp_dir).exists():
+            print(f"Cleaning up temporary extraction directory...")
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
