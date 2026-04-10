@@ -357,7 +357,9 @@ def _safe_extract_zip(zip_path, extract_dir):
         for member in z.namelist():
             # Resolve the target path and ensure it stays under extract_dir
             target = (extract_dir / member).resolve()
-            if not str(target).startswith(str(extract_dir)):
+            try:
+                target.relative_to(extract_dir)
+            except ValueError:
                 print(f"  WARNING: Skipping suspicious ZIP entry (path traversal): {member}")
                 continue
             z.extract(member, str(extract_dir))

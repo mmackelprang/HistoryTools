@@ -355,9 +355,8 @@ class TestMakeSlug:
 
     def test_slugifies_spaces_and_mixed_case(self):
         result = make_slug("Letter 19830603 Hope - Mark.pdf")
-        # Date 19830603 is removed, spaces and punctuation become hyphens
-        assert "-" not in result or result  # result is a slug
-        assert result == make_slug("Letter 19830603 Hope - Mark.pdf")
+        # make_slug strips date prefixes but embedded dates remain as part of the slug
+        assert result == "letter-19830603-hope-mark"
 
     def test_scan_number_filename_stays_as_slug(self):
         result = make_slug("scan001.pdf")
@@ -488,7 +487,8 @@ class TestSafeExtractZip:
         assert evil_files == [], f"Path traversal file was extracted: {evil_files}"
 
         captured = capsys.readouterr()
-        assert "WARNING" in captured.out or "WARNING" in captured.err or True  # warning may or may not surface
+        # The function should print a warning about the suspicious entry
+        assert "WARNING" in captured.out or "path traversal" in captured.out.lower()
 
     def test_creates_extraction_directory_if_missing(self, tmp_path):
         zip_path = tmp_path / "test.zip"

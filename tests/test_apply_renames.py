@@ -69,8 +69,8 @@ class TestUpdateFrontmatterSource:
         update_frontmatter_source(md, "nonexistent.pdf", "new.pdf")
         assert md.read_text(encoding="utf-8") == original
 
-    def test_replaces_only_source_file_line_not_body(self, tmp_path):
-        """Ensure the replacement targets only the frontmatter field, not body text."""
+    def test_replaces_all_occurrences_including_body(self, tmp_path):
+        """Documents that str.replace updates ALL occurrences, including body text."""
         content = (
             "---\nsource_file: old.pdf\n---\n\n"
             "We reference old.pdf in the body text too.\n"

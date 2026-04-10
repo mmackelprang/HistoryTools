@@ -35,7 +35,8 @@ def make_zip(zip_path: Path, members: dict) -> Path:
     with zipfile.ZipFile(str(zip_path), "w") as z:
         for arcname, content in members.items():
             if content is None:
-                z.mkdir(arcname)
+                # Create a directory entry by writing an empty entry with trailing /
+                z.writestr(arcname.rstrip("/") + "/", "")
             else:
                 z.writestr(arcname, content)
     return zip_path
