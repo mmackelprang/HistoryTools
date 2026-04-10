@@ -118,6 +118,40 @@ class TestAssessTextQuality:
         # Should be suspect or poor -- not good
         assert result["quality"] != "good"
 
+    def test_ocr_failure_markers_rated_poor(self):
+        """Text containing [OCR failed: ...] markers is always 'poor'."""
+        text = (
+            "## Page 1\n"
+            "[OCR failed: [WinError 2] The system cannot find the file specified]\n"
+            "## Page 2\n"
+            "[OCR failed: [WinError 2] The system cannot find the file specified]\n"
+        )
+        result = assess_text_quality(text)
+        assert result["quality"] == "poor"
+        assert any("OCR failure" in r or "marker" in r for r in result["reasons"])
+
+    def test_blank_page_markers_rated_poor(self):
+        """Text containing [Page appears blank or illegible] markers is 'poor'."""
+        text = (
+            "## Page 1\n"
+            "[Page appears blank or illegible]\n"
+            "## Page 2\n"
+            "[Page appears blank or illegible]\n"
+        )
+        result = assess_text_quality(text)
+        assert result["quality"] == "poor"
+
+    def test_mixed_ocr_failures_and_text(self):
+        """Even one OCR failure marker makes the quality 'poor'."""
+        text = (
+            "This is some good text from page one of the document. "
+            "It has many real words and reads well.\n"
+            "[OCR failed: timeout]\n"
+            "More good text here."
+        )
+        result = assess_text_quality(text)
+        assert result["quality"] == "poor"
+
 
 # ── should_retranscribe() ────────────────────────────────────────────────────
 
