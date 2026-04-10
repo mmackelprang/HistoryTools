@@ -75,9 +75,10 @@ You can also run each step individually for more control:
 family-archive organize --dry-run        # preview
 family-archive organize                  # run
 
-# Transcribe PDFs (Gemini AI — best for handwriting)
-family-archive transcribe --dry-run      # preview + cost estimate
-family-archive transcribe                # run
+# Transcribe PDFs — tiered approach (free first, AI only when needed)
+python scripts/transcribe_pdfs.py        # free: native text + Tesseract OCR
+family-archive transcribe --low-confidence-only   # paid: AI only for low-confidence results
+family-archive transcribe                # paid: AI for all untranscribed PDFs
 
 # Transcribe audio (AssemblyAI — with speaker diarization)
 family-archive transcribe-audio --dry-run
@@ -120,6 +121,21 @@ family-archive format --file Letters/1983/letter.transcript.md
 family-archive rename --folder FamilyMembers
 ```
 
+## Transcription Strategy
+
+PDF transcription uses a **tiered approach** to minimize AI costs:
+
+1. **Native text extraction** (free, instant) — PDFs with embedded text are extracted using PyMuPDF
+2. **Tesseract OCR** (free, slower) — Scanned/image PDFs are OCR'd locally
+3. **Gemini AI vision** (paid, best quality) — Only used for files where steps 1-2 produced low-confidence results (typically handwritten documents)
+
+The bootstrap pipeline runs all three tiers automatically. When running manually:
+
+```bash
+python scripts/transcribe_pdfs.py                    # free: tiers 1 + 2
+family-archive transcribe --low-confidence-only       # paid: tier 3 for low-confidence only
+```
+
 ## AI-Powered Features
 
 These features require API keys (see [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEYS.md)):
@@ -127,6 +143,7 @@ These features require API keys (see [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEY
 | Command | Service | What It Does | Estimated Cost |
 |---------|---------|-------------|---------------|
 | `family-archive transcribe` | Google Gemini | AI vision for handwriting OCR | ~$0.50-1.00 per 1000 pages |
+| `family-archive transcribe --low-confidence-only` | Google Gemini | AI only for low-confidence files | Much less (only handwriting) |
 | `family-archive transcribe-audio` | AssemblyAI | Speaker-diarized audio transcription | ~$0.01/minute |
 | `family-archive format` | Anthropic Claude | Markdown formatting + summaries | ~$0.10-0.20 per 500 files |
 | `family-archive rename` | Google Gemini | AI-suggested filenames | ~$0.10-0.30 per 500 files |

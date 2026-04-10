@@ -38,15 +38,24 @@ and copied to the appropriate folders.
 
 ### 2. Transcribe PDFs
 
-**Option A: Gemini AI Vision (paid, excellent for handwriting)**
-```bash
-family-archive transcribe --dry-run     # preview + cost estimate
-family-archive transcribe               # run
-```
+Transcription uses a tiered approach to minimize costs:
 
-**Option B: Local OCR (free, works for printed text)**
+**Step 1: Free local transcription (native text + Tesseract OCR)**
 ```bash
 python scripts/transcribe_pdfs.py
+```
+
+This handles all PDFs with embedded text and printed/typed scanned documents for free.
+
+**Step 2: AI for remaining low-confidence files (paid, for handwriting)**
+```bash
+family-archive transcribe --low-confidence-only --dry-run   # preview what needs AI
+family-archive transcribe --low-confidence-only              # run AI on handwritten docs only
+```
+
+**Or transcribe everything with AI (paid)**
+```bash
+family-archive transcribe --force        # AI transcription for all PDFs
 ```
 
 ### 3. Transcribe Audio
