@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Bootstrap — Scan, classify, and process an entire source folder into an organized archive.
+Ingest — Scan, classify, and process an entire source folder into an organized archive.
 
 Phase 1 (scan): Recursively walk a source directory, classify every file by type,
-filename patterns, and folder context. Produce _bootstrap-plan.json for review.
+filename patterns, and folder context. Produce _ingest-plan.json for review.
 
 Phase 2 (execute): Read the approved plan and run the full processing pipeline:
 copy → transcribe → format → rename → date-detect → report.
 
 Usage:
-    python bootstrap.py /path/to/source --scan                # scan and classify
-    python bootstrap.py /path/to/archive.zip --scan           # scan a ZIP file as source
-    python bootstrap.py /path/to/source --scan --mode merge   # merge into existing
-    python bootstrap.py --execute                              # run the approved plan
-    python bootstrap.py /path/to/source                        # interactive: scan + approve + execute
-    python bootstrap.py --dry-run /path/to/source --scan       # preview scan
+    python ingest.py /path/to/source --scan                # scan and classify
+    python ingest.py /path/to/archive.zip --scan           # scan a ZIP file as source
+    python ingest.py /path/to/source --scan --mode merge   # merge into existing
+    python ingest.py --execute                              # run the approved plan
+    python ingest.py /path/to/source                        # interactive: scan + approve + execute
+    python ingest.py --dry-run /path/to/source --scan       # preview scan
 
 ZIP support:
     - Source can be a .zip file — extracted to a temp directory for scanning
@@ -620,7 +620,7 @@ def run_script(script_name, extra_args=None):
 
 
 def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_override=None):
-    """Execute all stages of the bootstrap plan."""
+    """Execute all stages of the ingest plan."""
     dest_root = Path(plan["dest_root"])
 
     # If source was a ZIP, re-extract it for the copy stage
@@ -729,7 +729,7 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_ove
 
     # Final summary
     print(f"\n{'=' * 60}")
-    print("Bootstrap complete!")
+    print("Ingest complete!")
     print(f"{'=' * 60}")
     print(f"\nNext steps:")
     print(f"  1. Review rename proposals: _rename-proposals.md")
@@ -749,7 +749,7 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_ove
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Bootstrap — scan, classify, and process a source folder into an organized archive"
+        description="Ingest — scan, classify, and process a source folder into an organized archive"
     )
     parser.add_argument("source", nargs="?", help="Source directory to scan")
     parser.add_argument("--scan", action="store_true", help="Scan and classify only (produce plan)")
@@ -794,9 +794,9 @@ def main():
     if args.execute:
         # Try to find plan file
         if dest_root:
-            plan_path = Path(dest_root) / "_bootstrap-plan.json"
+            plan_path = Path(dest_root) / "_ingest-plan.json"
         else:
-            plan_path = Path("_bootstrap-plan.json")
+            plan_path = Path("_ingest-plan.json")
 
         if not plan_path.exists():
             print(f"ERROR: No plan found at {plan_path}")
@@ -838,7 +838,7 @@ def main():
             plan["extraction_type"] = "zip" if source_path.suffix.lower() == ".zip" else "directory_with_zips"
 
         # Update plan path now that we know dest_root
-        plan_path = Path(plan["dest_root"]) / "_bootstrap-plan.json"
+        plan_path = Path(plan["dest_root"]) / "_ingest-plan.json"
         plan_path.parent.mkdir(parents=True, exist_ok=True)
 
         print_scan_summary(plan)
@@ -852,7 +852,7 @@ def main():
         print(f"\nPlan saved to {plan_path}")
 
         if args.scan:
-            print(f"Review the plan, then run: python scripts/bootstrap.py --execute")
+            print(f"Review the plan, then run: python scripts/ingest.py --execute")
             return
 
         # Interactive mode: ask for approval then execute
@@ -865,7 +865,7 @@ def main():
         if answer in ("y", "yes"):
             execute_plan(plan, args.skip_transcribe, args.skip_format, args.config)
         else:
-            print(f"Plan saved. Run later with: python scripts/bootstrap.py --execute")
+            print(f"Plan saved. Run later with: python scripts/ingest.py --execute")
 
     finally:
         # Clean up temp directory if we extracted from a ZIP

@@ -47,7 +47,7 @@ class TestCLIHelp:
         )
         assert result.returncode == 0
         assert "family-archive" in result.stdout
-        assert "bootstrap" in result.stdout
+        assert "ingest" in result.stdout
         assert "organize" in result.stdout
         assert "verify" in result.stdout
 

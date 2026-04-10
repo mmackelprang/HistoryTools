@@ -1225,7 +1225,7 @@ incorporated back into the open-source CLI over time.
 
 #### Open Source (this repo) — Free, CLI-focused
 
-- **Phase 1** (current): Core archive toolkit — organize, transcribe, format, rename, bootstrap
+- **Phase 1** (current): Core archive toolkit — organize, transcribe, format, rename, ingest
 - **Phase 2**: Library refactor, SQLite index with full-text search, entity extraction (people/places/events from transcripts), document splitting, video transcription, email import. Cloud gateway stub.
 
 Phase 2 completes the open-source foundation. The CLI will be a fully capable

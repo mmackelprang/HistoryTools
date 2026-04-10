@@ -1,5 +1,5 @@
 """
-Tests for bootstrap.py pure-logic functions.
+Tests for ingest.py pure-logic functions.
 
 All tests are offline (no API calls) and use tmp_path for filesystem work.
 """
@@ -16,7 +16,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from bootstrap import (
+from ingest import (
     get_file_type,
     classify_file,
     classify_by_folder_hints,

@@ -1,4 +1,4 @@
-# Bootstrap Command — Design Spec
+# Ingest Command — Design Spec
 
 ## Goal
 
@@ -6,9 +6,9 @@ A single command that scans a source directory, classifies every file using file
 
 ## Architecture
 
-Bootstrap is a two-phase command following the same propose-then-apply pattern as rename and date detection:
+Ingest is a two-phase command following the same propose-then-apply pattern as rename and date detection:
 
-- **Phase 1 (`--scan`)**: Walk source directory, classify files, produce `_bootstrap-plan.json` for review
+- **Phase 1 (`--scan`)**: Walk source directory, classify files, produce `_ingest-plan.json` for review
 - **Phase 2 (`--execute`)**: Read approved plan, run the full processing pipeline with stage-by-stage progress
 
 Both phases use the core library functions. The CLI prints progress; the future web UI will render the same data as interactive tables and progress bars.
@@ -17,19 +17,19 @@ Both phases use the core library functions. The CLI prints progress; the future 
 
 ```bash
 # Phase 1: Scan and classify
-family-archive bootstrap /path/to/source --scan                # standalone mode
-family-archive bootstrap /path/to/source --scan --mode merge   # merge into existing
+family-archive ingest /path/to/source --scan                # standalone mode
+family-archive ingest /path/to/source --scan --mode merge   # merge into existing
 
 # Phase 2: Execute the approved plan
-family-archive bootstrap --execute
-family-archive bootstrap --execute --skip-transcribe   # copy only
-family-archive bootstrap --execute --skip-format       # skip formatting
+family-archive ingest --execute
+family-archive ingest --execute --skip-transcribe   # copy only
+family-archive ingest --execute --skip-format       # skip formatting
 
 # Or interactive (scan + pause for approval + execute)
-family-archive bootstrap /path/to/source
+family-archive ingest /path/to/source
 
 # Preview
-family-archive bootstrap /path/to/source --scan --dry-run
+family-archive ingest /path/to/source --scan --dry-run
 ```
 
 ## Phase 1: Scan and Classify
@@ -46,7 +46,7 @@ family-archive bootstrap /path/to/source --scan --dry-run
 3. Files it can't classify → route to `NeedsReview/`
 4. File types it can't process → route to `Unprocessed/` with documentation
 5. In merge mode: detect potential duplicates against existing archive by MD5 hash
-6. Write `_bootstrap-plan.json`
+6. Write `_ingest-plan.json`
 
 ### Known File Types and Processing Pipelines
 
@@ -85,7 +85,7 @@ Folder hint matching is case-insensitive and uses the `classify_patterns` from t
 - **NeedsReview/** — Known file types we can store and process, but can't auto-classify. Spreadsheets, ambiguous documents. User classifies these manually.
 - **Unprocessed/** — File types we don't have tooling for. PowerPoint, Numbers, proprietary formats. Stored for future processing when tooling is added.
 
-### Plan Output (`_bootstrap-plan.json`)
+### Plan Output (`_ingest-plan.json`)
 
 ```json
 {
@@ -181,13 +181,13 @@ Processing plan:
   180 photos → catalog EXIF
   All transcripts → format, propose renames, detect dates
 
-Plan saved to _bootstrap-plan.json
-Review and edit, then run: family-archive bootstrap --execute
+Plan saved to _ingest-plan.json
+Review and edit, then run: family-archive ingest --execute
 ```
 
 ## Phase 2: Execute
 
-Reads `_bootstrap-plan.json` and runs each processing stage sequentially:
+Reads `_ingest-plan.json` and runs each processing stage sequentially:
 
 1. **Copy** — Copy all approved files to their destination folders with proper naming
 2. **Transcribe PDFs** — Run Gemini/Tesseract on new PDFs (restartable, skips existing)
@@ -246,7 +246,7 @@ Found 89 undated files with transcripts
 Archive summary saved to _archive-summary.md
 
 ============================================================
-Bootstrap complete!
+Ingest complete!
   570 files organized
   373 transcripts created
   370 transcripts formatted
@@ -270,7 +270,7 @@ When `--mode merge`:
 
 ## Restartability
 
-- `_bootstrap-plan.json` persists between runs
+- `_ingest-plan.json` persists between runs
 - `--execute` checks if each file has already been copied (dest exists + same size)
 - Each processing stage uses existing restartable scripts:
   - Transcription skips files with existing successful `.transcript.md`
@@ -295,7 +295,7 @@ The same two phases map to the web UI:
 - Pause/cancel buttons
 - Error log with retry options
 
-The `_bootstrap-plan.json` serves as the data contract between scan and execute, whether the review happens in a terminal or a browser.
+The `_ingest-plan.json` serves as the data contract between scan and execute, whether the review happens in a terminal or a browser.
 
 ## Safety
 
