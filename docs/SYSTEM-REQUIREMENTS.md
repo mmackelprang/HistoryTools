@@ -51,6 +51,7 @@ All installed automatically via `pip install -e ".[all]"`:
 | Package | Purpose | Size | Required for |
 |---------|---------|------|-------------|
 | google-genai | Google Gemini API client | ~5MB | PDF transcription (handwriting), rename proposals, date detection |
+| openai | OpenAI API client | ~5MB | Alternative to Gemini (PDF transcription) and Claude (formatting) |
 | assemblyai | AssemblyAI API client | ~2MB | Audio transcription with speaker diarization |
 | anthropic | Anthropic Claude API client | ~5MB | Transcript formatting |
 

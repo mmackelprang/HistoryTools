@@ -1123,32 +1123,161 @@ WHERE ref1.artifact_id = 42  -- the letter
   AND anch2.anchor_type = 'timestamp';
 ```
 
+### HistoryTools Cloud — Managed AI Gateway
+
+The open-source toolkit is fully functional with self-managed API keys. For users who
+want a simpler experience, **HistoryTools Cloud** is a planned managed AI gateway that
+provides a single API key for all AI features.
+
+**How it works:**
+
+```
+User's machine                        HistoryTools Cloud
++------------------+                  +---------------------+
+| HistoryTools CLI |  -- HTTPS -->    | AI Gateway          |
+|                  |                  |                     |
+| HISTORYTOOLS_    |                  | Smart routing:      |
+|   API_KEY=ht_... |                  | - Cheapest model    |
++------------------+                  | - Auto-failover     |
+                                      | - Rate balancing    |
+                                      | - Usage metering    |
+                                      |                     |
+                                      | Backends:           |
+                                      | +- Gemini           |
+                                      | +- OpenAI           |
+                                      | +- Anthropic        |
+                                      | +- (future vendors) |
+                                      +---------------------+
+```
+
+**Benefits for users:**
+- One API key instead of three (or four)
+- No need to manage billing across multiple AI providers
+- Automatic failover (if Gemini is down, requests route to OpenAI)
+- Smart model selection (cheapest available model for each task type)
+- Usage dashboard and spending controls
+
+**Business model (open core):**
+- The CLI toolkit (this repo) remains free and open-source through Phase 2
+- HistoryTools Cloud (private repo) includes the managed AI gateway, web UI, and all Phase 3+ features
+- Users choose: CLI with self-managed keys (free) or subscription for the full experience
+- Data is fully portable — no lock-in, archives work with both CLI and subscription
+
+**Implementation:**
+- A `cloud` vendor in `ai_client.py` routes requests to the gateway via simple REST API
+- The gateway manages backend API keys centrally (users never see them)
+- The gateway selects the cheapest available backend per request type
+- Usage is metered per user for subscription billing
+
+**Planned pricing tiers:**
+
+| Tier | Price | Requests/month | Best for |
+|------|-------|---------------|----------|
+| Free | $0 | Local tools only | Users who manage their own API keys |
+| Starter | ~$5/mo | ~500 | Small archives, getting started |
+| Standard | ~$15/mo | ~5,000 | Most family archives |
+| Unlimited | ~$30/mo | Unlimited | Power users, large archives |
+
+### Entity Extraction Pipeline
+
+A critical pipeline component for building the hyper-personal-web: automatically
+extracting structured entities (people, places, dates, events) from transcripts and
+linking them back to specific locations in the source material.
+
+**How it works:**
+
+1. Read a formatted transcript
+2. Send to AI with entity extraction prompt
+3. AI returns structured JSON with entities and their locations (anchors)
+4. Store in SQLite (entities, references, anchors tables)
+
+**Example output for a letter:**
+
+```json
+{
+  "entities": [
+    {"type": "person", "name": "Alice", "role": "author", "anchor": {"page": 1, "paragraph": 1}},
+    {"type": "person", "name": "Bob", "role": "recipient", "anchor": {"page": 1, "paragraph": 1}},
+    {"type": "place", "name": "Springfield", "anchor": {"page": 2, "paragraph": 3, "snippet": "we drove to Springfield"}},
+    {"type": "event", "name": "Christmas gathering", "date": "1983-12-25", "anchor": {"page": 2, "paragraph": 5}}
+  ]
+}
+```
+
+**CLI:**
+
+```
+family-archive extract-entities                    # all transcripts
+family-archive extract-entities --folder Letters   # one folder
+family-archive extract-entities --file path.md     # single file
+```
+
+This feeds directly into the SQLite correlation engine and enables the timeline,
+map, and people graph views.
+
 ### Phasing for the Vision
 
-This vision extends well beyond the initial 4 phases:
+The project follows an **open core** model. The open-source CLI toolkit (this repo)
+handles the core archival workflow. Premium features — the web UI, advanced
+visualizations, managed AI, and collaboration tools — are part of the subscription
+service (private repo). Selected features from the subscription side may be
+incorporated back into the open-source CLI over time.
 
-- **Phase 1-2**: Core archive toolkit (what we're building now)
-- **Phase 3**: Web UI for browsing and managing the archive
-- **Phase 4**: Photo AI, face recognition, advanced search
-- **Phase 5**: Google Timeline import, SMS import, email import — building the event/correlation layer
-- **Phase 6**: Timeline view, map view, people graph — the life history visualization
-- **Phase 7**: Narrative generation — AI-assembled life story chapters. FamilySearch integration (import family tree data, link archive items to FamilySearch person records, pull metadata like dates/places/relationships to enrich the archive, and eventually contribute photos/stories/documents back to FamilySearch Memories)
-- **Phase 8**: Multi-family support, sharing, collaboration — families connecting their archives. Deeper FamilySearch integration: auto-match documents to ancestors, suggest connections across family lines, sync tagged photos and stories bidirectionally with FamilySearch Memories
+#### Open Source (this repo) — Free, CLI-focused
+
+- **Phase 1** (current): Core archive toolkit — organize, transcribe, format, rename, bootstrap
+- **Phase 2**: Library refactor, SQLite index with full-text search, entity extraction (people/places/events from transcripts), document splitting, video transcription, email import. Cloud gateway stub.
+
+Phase 2 completes the open-source foundation. The CLI will be a fully capable
+archival tool with local search, entity extraction, and support for all major
+media types. Power users and developers can do everything from the command line.
+
+#### Subscription Service (private repo) — Paid, UI-focused
+
+- **Phase 3**: Web UI for browsing, searching, and managing the archive. HistoryTools Cloud AI gateway launch.
+- **Phase 4**: Photo AI (scene descriptions, face recognition, date estimation)
+- **Phase 5**: Data import hub — Google Timeline, SMS, social media, calendar. Correlation engine connecting people/places/events across all media.
+- **Phase 6**: Timeline view, interactive map, people graph — the life history visualization
+- **Phase 7**: AI narrative generation — auto-assembled life story chapters. FamilySearch integration (import family trees, link archive items to FamilySearch person records, contribute photos/stories back to FamilySearch Memories)
+- **Phase 8**: Multi-family support, sharing, collaboration — families connecting their archives. Deeper FamilySearch integration with bidirectional sync.
+
+The subscription service builds on the open-source core library. The same
+`ai_client.py`, taxonomy system, and file format conventions are shared between
+both. Data is always portable — archives created with the subscription service
+can be managed with the CLI and vice versa.
+
+#### What stays open vs. what's subscription
+
+| Feature | Open Source (CLI) | Subscription (Web UI) |
+|---------|------------------|-----------------------|
+| File organization | Yes | Yes |
+| Transcription (local + AI) | Yes (self-managed keys) | Yes (managed, one key) |
+| Formatting and renaming | Yes | Yes |
+| Entity extraction | Yes (CLI) | Yes (visual UI) |
+| Full-text search | Yes (CLI) | Yes (search bar) |
+| Document splitting | Yes (CLI) | Yes (visual page selector) |
+| Photo AI descriptions | Selected features | Full gallery + face tagging |
+| Timeline / map / people graph | No | Yes |
+| Narrative generation | No | Yes |
+| FamilySearch integration | No | Yes |
+| Multi-family collaboration | No | Yes |
+| Managed AI gateway | No (self-managed keys) | Yes (one key, auto-routing) |
 
 The architecture decisions made now (filesystem as truth, SQLite as index, pluggable data
-sources, event-based correlation model) are designed to support this full vision without
-requiring a rewrite.
+sources, event-based correlation model, unified AI client) are designed to support both
+the open-source CLI and the subscription service without requiring separate codebases.
 
 ## Design Principles
 
-1. **CLI-first** — everything works from the terminal. The web UI is a convenience layer, never a requirement.
+1. **CLI-first** — everything in the open-source repo works from the terminal. The web UI (subscription) is a convenience layer, never a requirement.
 2. **Config-driven** — all behavior controlled by JSON files. No hardcoded paths, folder names, or taxonomies.
 3. **Restartable** — every operation saves progress incrementally. Interruptions lose at most one file's work.
 4. **Source files are sacred** — never modified or deleted. All work produces copies.
-5. **AI-optional** — local tools (Tesseract, Whisper) work without API keys. AI features (Gemini, AssemblyAI, Claude) are upgrades, not requirements.
-6. **Filesystem is truth, SQLite is speed** — Transcripts are markdown files. Proposals are JSON. The SQLite index is a rebuilable cache for search and fast queries. Delete the .db file and lose nothing.
-7. **Pluggable engines** — transcription, formatting, and rename proposal all support multiple backends (Gemini/Tesseract, AssemblyAI/Whisper, Claude/Gemini). Config selects which to use.
-8. **Forward compatible** — the taxonomy, config, and CLI are designed to grow without breaking changes:
+5. **AI-optional** — local tools (Tesseract, Whisper) work without API keys. AI features are upgrades, not requirements.
+6. **Filesystem is truth, SQLite is speed** — Transcripts are markdown files. Proposals are JSON. The SQLite index is a rebuildable cache for search and fast queries. Delete the .db file and lose nothing.
+7. **Pluggable engines** — transcription, formatting, and rename proposal all support multiple backends. Config selects which to use.
+8. **Data portability** — archives are fully portable between CLI and subscription service. No vendor lock-in. Your data is always yours.
+9. **Forward compatible** — the taxonomy, config, and CLI are designed to grow without breaking changes:
    - taxonomy.json has `version` and `phase` markers so new data types activate gracefully on upgrade
    - The `import --type` CLI pattern is extensible without changing the CLI itself
    - SQLite schema uses a generic `events` table that accommodates any data source

@@ -72,6 +72,14 @@ def main():
         return f"installed — {status}"
     results.append(check("AssemblyAI (AI audio transcription)", check_assemblyai))
 
+    # OpenAI
+    def check_openai():
+        import openai
+        key = os.environ.get("OPENAI_API_KEY", "")
+        status = "API key set" if key else "API key NOT set (check .env)"
+        return f"installed — {status}"
+    results.append(check("OpenAI (alternative AI transcription/formatting)", check_openai))
+
     # python-dotenv
     results.append(check("python-dotenv (.env loader)", lambda: __import__("dotenv").__name__))
 

@@ -151,9 +151,9 @@ def main():
 
     subparsers.add_parser('bootstrap', help='Scan, classify, and process a source folder')
     subparsers.add_parser('organize', help='Classify and copy files to organized folders')
-    subparsers.add_parser('transcribe', help='Transcribe PDFs with Gemini AI vision')
+    subparsers.add_parser('transcribe', help='Transcribe PDFs with AI vision (Gemini or OpenAI; --vendor planned)')
     subparsers.add_parser('transcribe-audio', help='Transcribe audio with AssemblyAI')
-    subparsers.add_parser('format', help='Format transcripts with summaries and markdown')
+    subparsers.add_parser('format', help='Format transcripts with AI (Claude or OpenAI; --vendor planned)')
     subparsers.add_parser('rename', help='Propose (or --apply) descriptive filenames')
     subparsers.add_parser('speakers', help='Assign real names to speaker labels')
     subparsers.add_parser('detect-dates', help='Detect dates in undated files')

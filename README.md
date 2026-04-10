@@ -140,16 +140,18 @@ family-archive transcribe --low-confidence-only       # paid: tier 3 for low-con
 
 These features require API keys (see [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEYS.md)):
 
-| Command | Service | What It Does | Estimated Cost |
-|---------|---------|-------------|---------------|
-| `family-archive transcribe` | Google Gemini | AI vision for handwriting OCR | ~$0.50-1.00 per 1000 pages |
-| `family-archive transcribe --low-confidence-only` | Google Gemini | AI only for low-confidence files | Much less (only handwriting) |
-| `family-archive transcribe-audio` | AssemblyAI | Speaker-diarized audio transcription | ~$0.01/minute |
-| `family-archive format` | Anthropic Claude | Markdown formatting + summaries | ~$0.10-0.20 per 500 files |
-| `family-archive rename` | Google Gemini | AI-suggested filenames | ~$0.10-0.30 per 500 files |
-| `family-archive detect-dates` | Google Gemini | Date detection in undated files | ~$0.05-0.10 per 200 files |
+| Command | Default Service | Alternatives | What It Does | Estimated Cost |
+|---------|----------------|-------------|-------------|---------------|
+| `family-archive transcribe` | Google Gemini | OpenAI GPT-4o | AI vision for handwriting OCR | ~$0.50-1.00 per 1000 pages |
+| `family-archive transcribe --low-confidence-only` | Google Gemini | OpenAI GPT-4o | AI only for low-confidence files | Much less (only handwriting) |
+| `family-archive transcribe-audio` | AssemblyAI | -- | Speaker-diarized audio transcription | ~$0.01/minute |
+| `family-archive format` | Anthropic Claude | OpenAI GPT-4o | Markdown formatting + summaries | ~$0.10-0.20 per 500 files |
+| `family-archive rename` | Google Gemini | OpenAI GPT-4o | AI-suggested filenames | ~$0.10-0.30 per 500 files |
+| `family-archive detect-dates` | Google Gemini | OpenAI GPT-4o | Date detection in undated files | ~$0.05-0.10 per 200 files |
 
 All AI features are optional. Without API keys, local tools (Tesseract OCR, Whisper) are used instead.
+A unified AI client (`ai_client.py`) supports Gemini, OpenAI, and Anthropic — vendor swapping
+via a `--vendor` CLI flag is planned for an upcoming release.
 
 ## Modes
 
@@ -224,6 +226,7 @@ Installed automatically via `pip install -e ".[all]"`:
 | Pillow | Image processing |
 | python-dotenv | Load API keys from .env |
 | google-genai | Gemini AI for handwriting OCR |
+| openai | OpenAI API (alternative to Gemini/Claude) |
 | assemblyai | Audio transcription with speaker ID |
 | anthropic | Transcript formatting with Claude |
 | openai-whisper | Local audio transcription |
@@ -242,14 +245,16 @@ System tools (install separately): [Tesseract OCR](https://github.com/tesseract-
 
 ## Roadmap
 
+**Open source (this repo):**
 - **Phase 1** (current): CLI toolkit for documents, audio, and basic organization
-- **Phase 2**: Library refactor, SQLite index, video transcription, email import, document splitting
-- **Phase 3**: Web UI for browsing, searching, and managing the archive
-- **Phase 4**: Photo AI (scene descriptions, face recognition, date estimation)
-- **Phase 5**: SMS import, Google Timeline, email import — correlation engine
-- **Phase 6**: Timeline view, map view, people graph — life history visualization
-- **Phase 7**: Narrative generation, FamilySearch integration
-- **Phase 8**: Multi-family support, sharing, collaboration
+- **Phase 2**: Library refactor, SQLite index, entity extraction, document splitting, video transcription
+
+**Subscription service ([historytools.io](https://historytools.io)):**
+- **Phase 3+**: Web UI, managed AI gateway, photo AI, timeline/map/people graph, narrative generation, FamilySearch integration, multi-family collaboration
+
+The open-source CLI is fully functional on its own. The subscription service adds a
+web UI, managed AI, and advanced visualization features. Data is fully portable between both.
+See [docs/VISION.md](docs/VISION.md) for the complete roadmap.
 
 ## License
 
