@@ -60,6 +60,19 @@ def assess_text_quality(text):
     words = text.split()
     word_count = len(words)
 
+    # Check for OCR failure markers
+    ocr_failures = len(re.findall(r"\[OCR failed:.*?\]", text))
+    blank_markers = len(re.findall(r"\[Page appears blank or illegible\]", text))
+    if ocr_failures > 0 or blank_markers > 0:
+        return {
+            "quality": "poor",
+            "word_count": word_count,
+            "dict_word_ratio": 0.0,
+            "avg_word_length": 0.0,
+            "special_char_ratio": 0.0,
+            "reasons": [f"contains {ocr_failures + blank_markers} OCR failure/blank page markers"],
+        }
+
     if word_count < 10:
         return {
             "quality": "poor",

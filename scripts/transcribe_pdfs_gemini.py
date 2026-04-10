@@ -300,6 +300,8 @@ def main():
                 content = md.read_text(encoding="utf-8", errors="replace")
                 if "transcription_confidence: pending" in content or "transcription failed" in content:
                     filtered.append(p)  # error stub — always retry
+                elif "[OCR failed:" in content or "[Page appears blank or illegible]" in content:
+                    filtered.append(p)  # OCR failures — needs AI
                 elif args.low_confidence_only and "transcription_confidence: low" in content:
                     filtered.append(p)  # low confidence — AI can do better
                 # else: medium/high confidence — skip
