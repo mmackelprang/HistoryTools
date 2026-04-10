@@ -43,21 +43,30 @@ def get_ai_client(vendor=None, api_key_env=None):
         key = os.environ.get(api_key_env or "GEMINI_API_KEY")
         if not key:
             raise ValueError("GEMINI_API_KEY not set in .env")
-        from google import genai
+        try:
+            from google import genai
+        except ImportError:
+            raise ValueError("google-genai package not installed. Run: pip install google-genai")
         return genai.Client(api_key=key), "gemini"
 
     elif vendor == "openai":
         key = os.environ.get(api_key_env or "OPENAI_API_KEY")
         if not key:
             raise ValueError("OPENAI_API_KEY not set in .env")
-        import openai
+        try:
+            import openai
+        except ImportError:
+            raise ValueError("openai package not installed. Run: pip install openai")
         return openai.OpenAI(api_key=key), "openai"
 
     elif vendor == "anthropic":
         key = os.environ.get(api_key_env or "ANTHROPIC_API_KEY")
         if not key:
             raise ValueError("ANTHROPIC_API_KEY not set in .env")
-        import anthropic
+        try:
+            import anthropic
+        except ImportError:
+            raise ValueError("anthropic package not installed. Run: pip install anthropic")
         return anthropic.Anthropic(api_key=key), "anthropic"
 
     else:
@@ -95,7 +104,8 @@ def call_text(client, vendor, prompt, model=None, max_tokens=4096):
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=max_tokens,
                 )
-                return response.choices[0].message.content.strip()
+                content = response.choices[0].message.content
+                return content.strip() if content else ""
 
             elif vendor == "anthropic":
                 # Use streaming for long responses
@@ -108,6 +118,9 @@ def call_text(client, vendor, prompt, model=None, max_tokens=4096):
                     for text in stream.text_stream:
                         text_parts.append(text)
                 return "".join(text_parts)
+
+            else:
+                raise ValueError(f"Unsupported vendor for call_text: {vendor}")
 
         except Exception as e:
             err_str = str(e)
@@ -167,7 +180,8 @@ def call_vision(client, vendor, prompt, image_bytes, model=None, max_tokens=4096
                     }],
                     max_tokens=max_tokens,
                 )
-                return response.choices[0].message.content.strip()
+                content = response.choices[0].message.content
+                return content.strip() if content else "[Page appears blank or illegible]"
 
             else:
                 raise ValueError(f"Vision not supported for vendor: {vendor}. Use 'gemini' or 'openai'.")

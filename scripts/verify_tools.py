@@ -77,7 +77,7 @@ def main():
         import openai
         key = os.environ.get("OPENAI_API_KEY", "")
         status = "API key set" if key else "API key NOT set (check .env)"
-        return f"installed -- {status}"
+        return f"installed — {status}"
     results.append(check("OpenAI (alternative AI transcription/formatting)", check_openai))
 
     # python-dotenv

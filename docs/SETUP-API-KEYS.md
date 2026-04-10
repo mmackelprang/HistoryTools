@@ -91,10 +91,11 @@ provides audio transcription (alternative to AssemblyAI, but without speaker dia
 | gpt-4.1-mini | ~$0.40 | ~$1.60 | Newer mini model, better reasoning |
 | gpt-4.1 | ~$2.00 | ~$8.00 | Newer full model |
 
-**Whisper API**: $0.006/minute (no speaker diarization)
+**Whisper API**: $0.006/minute (no speaker diarization — planned for future release)
 
-**To use OpenAI instead of Gemini**: `family-archive transcribe --vendor openai`
-**To use OpenAI instead of Claude**: `family-archive format --vendor openai`
+**Vendor switching** (planned): `--vendor openai` flag will be added in a future release
+to let you use OpenAI instead of Gemini/Claude. The `ai_client.py` abstraction layer
+is already in place — the CLI integration is coming next.
 
 #### Setup:
 
@@ -152,14 +153,13 @@ ANTHROPIC_API_KEY=your-anthropic-key-here
 
 You don't need all four -- only set up the services you want to use:
 
-| If you only want... | You need... |
-|---------------------|-------------|
-| PDF handwriting transcription | Gemini or OpenAI |
-| Audio transcription | AssemblyAI (or use free Whisper) |
-| Transcript formatting | Anthropic or OpenAI |
-| Rename proposals + date detection | Gemini or OpenAI |
-| Everything (one vendor) | Gemini + AssemblyAI + Anthropic |
-| Everything (OpenAI alternative) | OpenAI + AssemblyAI |
+| If you only want... | You need today... | Future alternative |
+|---------------------|-------------------|-------------------|
+| PDF handwriting transcription | Gemini | OpenAI (planned) |
+| Audio transcription | AssemblyAI | Free local Whisper |
+| Transcript formatting | Anthropic | OpenAI (planned) |
+| Rename proposals + date detection | Gemini | OpenAI (planned) |
+| Everything | Gemini + AssemblyAI + Anthropic | — |
 
 ### Verify:
 
@@ -216,19 +216,20 @@ for single-speaker recordings or when you don't need speaker identification.
 
 ## Swapping AI Vendors
 
-Each AI step supports model override via CLI flags, and vendor swapping via `--vendor`:
+Each AI step supports model override via CLI flags:
 
-| Step | Default vendor/model | Override model | Swap vendor |
+| Step | Default vendor/model | Override model | Alternative |
 |------|---------------------|----------------|-------------|
-| PDF transcription | Gemini 2.5 Flash | `--model gemini-2.5-pro` | `--vendor openai` |
-| Audio transcription | AssemblyAI universal-3-pro | Use Whisper: `python scripts/transcribe_audio.py` | -- |
-| Formatting | Claude Haiku 4.5 | `--model claude-sonnet-4-20250514` | `--vendor openai` |
-| Rename proposals | Gemini 2.5 Flash | `--model gemini-2.5-pro` | `--vendor openai` |
-| Date detection | Gemini 2.5 Flash | `--model gemini-2.5-pro` | `--vendor openai` |
+| PDF transcription | Gemini 2.5 Flash | `--model gemini-2.5-pro` | OpenAI GPT-4o (planned via `--vendor`) |
+| Audio transcription | AssemblyAI universal-3-pro | Use Whisper: `python scripts/transcribe_audio.py` | Free local alternative |
+| Formatting | Claude Haiku 4.5 | `--model claude-sonnet-4-20250514` | OpenAI GPT-4o-mini (planned via `--vendor`) |
+| Rename proposals | Gemini 2.5 Flash | `--model gemini-2.5-pro` | OpenAI GPT-4o-mini (planned via `--vendor`) |
+| Date detection | Gemini 2.5 Flash | `--model gemini-2.5-pro` | OpenAI GPT-4o-mini (planned via `--vendor`) |
 
-The `--vendor` flag is supported by the unified AI client (`ai_client.py`). Vendor
-swapping is being rolled out across all scripts. The prompts are vendor-agnostic --
-only the API client code is vendor-specific.
+**Planned**: A `--vendor` CLI flag is coming soon that will let you swap between
+Gemini, OpenAI, and Anthropic for any step. The unified AI client (`ai_client.py`)
+is already in place — CLI integration is the next step. The prompts are vendor-agnostic,
+so quality will be comparable across vendors.
 
 ---
 

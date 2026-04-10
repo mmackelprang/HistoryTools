@@ -150,7 +150,8 @@ These features require API keys (see [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEY
 | `family-archive detect-dates` | Google Gemini | OpenAI GPT-4o | Date detection in undated files | ~$0.05-0.10 per 200 files |
 
 All AI features are optional. Without API keys, local tools (Tesseract OCR, Whisper) are used instead.
-Vendor swapping via `--vendor openai` is supported through the unified AI client (`ai_client.py`).
+A unified AI client (`ai_client.py`) supports Gemini, OpenAI, and Anthropic — vendor swapping
+via a `--vendor` CLI flag is planned for an upcoming release.
 
 ## Modes
 
