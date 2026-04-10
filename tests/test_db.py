@@ -159,8 +159,8 @@ class TestFileTypeHelpers:
     def test_get_file_type_unknown(self):
         assert _get_file_type("file.xyz") == "unknown"
 
-    def test_get_file_type_markdown_not_transcript(self):
-        assert _get_file_type("readme.md") == "transcript"  # .md maps to transcript
+    def test_get_file_type_plain_md_is_document(self):
+        assert _get_file_type("readme.md") == "document"  # .md (not .transcript.md) = document
 
     def test_get_date_prefix_dated(self):
         assert _get_date_prefix("1984-03-15_letter.pdf") == "1984-03-15"

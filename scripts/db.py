@@ -42,8 +42,6 @@ _EXT_TYPE_MAP = {
     ".eml": "email", ".mbox": "email", ".pst": "email",
     # genealogy
     ".gedcom": "genealogy", ".ged": "genealogy",
-    # transcript (special)
-    ".md": "transcript",
 }
 
 
@@ -53,6 +51,9 @@ def _get_file_type(filename):
     if name.endswith(".transcript.md"):
         return "transcript"
     ext = os.path.splitext(name)[1]
+    # .md files that aren't .transcript.md are documents (README, etc.)
+    if ext == ".md":
+        return "document"
     return _EXT_TYPE_MAP.get(ext, "unknown")
 
 
@@ -143,15 +144,30 @@ def get_db(dest_root, config=None):
     # Ensure parent directory exists
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    init_schema(conn)
-    return conn
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 5000")
+        wal_result = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        if wal_result and wal_result[0].lower() != "wal":
+            print(f"Warning: WAL mode not enabled (got {wal_result[0]})")
+        init_schema(conn)
+        return conn
+    except sqlite3.DatabaseError as e:
+        print(f"Database appears corrupt: {e}")
+        print(f"Delete {db_path} and run 'family-archive reindex' to rebuild.")
+        raise
 
 
 def init_schema(conn):
-    """Create tables if they don't exist. Set schema version."""
+    """Create tables if they don't exist. Set schema version.
+    Checks existing version for forward compatibility."""
+    current_version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if current_version > SCHEMA_VERSION:
+        raise RuntimeError(
+            f"Database schema version {current_version} is newer than code version {SCHEMA_VERSION}. "
+            "Please update HistoryTools."
+        )
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS files (
             id INTEGER PRIMARY KEY,
