@@ -623,6 +623,15 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_ove
     """Execute all stages of the bootstrap plan."""
     dest_root = Path(plan["dest_root"])
 
+    # If source was a ZIP, re-extract it for the copy stage
+    temp_dir = None
+    source_zip = plan.get("source_extracted_from")
+    if source_zip and Path(source_zip).exists():
+        temp_base = str(dest_root)
+        source_root, temp_dir = prepare_source(Path(source_zip), temp_base=temp_base)
+        # Update plan's source_root to point to the re-extracted location
+        plan["source_root"] = str(source_root)
+
     # Ensure config.json exists for downstream scripts
     config_path = Path(config_path_override) if config_path_override else SCRIPTS_DIR.parent / "config.json"
     if not config_path.exists():
@@ -721,6 +730,11 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_ove
     print(f"     Apply: python scripts/detect_dates.py --apply")
     print(f"  3. Classify files in NeedsReview/ manually")
     print(f"  4. Check Unprocessed/ for files needing future tooling")
+
+    # Clean up temp extraction directory if we re-extracted a ZIP
+    if temp_dir and Path(temp_dir).exists():
+        print(f"\nCleaning up temporary extraction directory...")
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
