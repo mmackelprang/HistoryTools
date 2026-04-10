@@ -49,7 +49,7 @@ MAX_IMAGE_BYTES = 4 * 1024 * 1024  # 4MB max per page image
 DEFAULT_DPI = 200                  # 200 DPI is the sweet spot for AI text recognition
 
 
-def render_page_to_png(doc, page_num, dpi=None):
+def render_page_to_image(doc, page_num, dpi=None):
     """Render a single PDF page to image bytes, reducing DPI if image is too large.
 
     Args:
@@ -57,13 +57,14 @@ def render_page_to_png(doc, page_num, dpi=None):
         page_num: Page index
         dpi: Starting DPI (default: DEFAULT_DPI). Use 300 for highest quality.
 
-    Returns PNG bytes, falling back to lower DPI or JPEG if too large."""
+    Returns image bytes (PNG, or JPEG if PNG is too large at all DPI levels)."""
     page = doc[page_num]
-    start_dpi = dpi or DEFAULT_DPI
+    start_dpi = max(72, min(dpi or DEFAULT_DPI, 600))  # clamp to sane range
 
     # Build DPI fallback chain from requested DPI down to 150
     dpi_chain = sorted(set([start_dpi, 200, 150]), reverse=True)
     dpi_chain = [d for d in dpi_chain if d <= start_dpi]
+    lowest_dpi = dpi_chain[-1] if dpi_chain else 150
 
     for try_dpi in dpi_chain:
         mat = fitz.Matrix(try_dpi / 72, try_dpi / 72)
@@ -72,8 +73,8 @@ def render_page_to_png(doc, page_num, dpi=None):
         if len(png_bytes) <= MAX_IMAGE_BYTES:
             return png_bytes
 
-    # If still too large at lowest DPI, convert to JPEG
-    mat = fitz.Matrix(150 / 72, 150 / 72)
+    # If still too large at lowest attempted DPI, convert to JPEG at that DPI
+    mat = fitz.Matrix(lowest_dpi / 72, lowest_dpi / 72)
     pix = page.get_pixmap(matrix=mat)
     try:
         from PIL import Image
@@ -261,8 +262,9 @@ def main():
     parser.add_argument("--folder", default=None, help="Only transcribe PDFs in this subfolder")
     parser.add_argument("--file", default=None, help="Transcribe a single PDF file")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Gemini model (default: {DEFAULT_MODEL})")
-    parser.add_argument("--dpi", type=int, default=DEFAULT_DPI,
-                        help=f"Render DPI for page images (default: {DEFAULT_DPI}, use 300 for highest quality)")
+    parser.add_argument("--dpi", type=int, default=DEFAULT_DPI, choices=range(72, 601),
+                        metavar="DPI",
+                        help=f"Render DPI for page images (default: {DEFAULT_DPI}, use 300 for highest quality, range: 72-600)")
     parser.add_argument("--force", action="store_true", help="Overwrite existing transcripts")
     parser.add_argument("--low-confidence-only", action="store_true",
                         help="Only transcribe PDFs with low-confidence existing transcripts")
@@ -362,7 +364,7 @@ def main():
             doc = fitz.open(str(pdf))
             page_images = {}
             for page_num in remaining_pages:
-                page_images[page_num] = render_page_to_png(doc, page_num, dpi=args.dpi)
+                page_images[page_num] = render_page_to_image(doc, page_num, dpi=args.dpi)
             doc.close()
 
             # Process remaining pages in parallel (up to 10 concurrent API calls)
