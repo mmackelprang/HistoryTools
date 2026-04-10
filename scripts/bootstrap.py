@@ -551,9 +551,9 @@ def print_scan_summary(plan):
     if pdf_count or audio_count:
         print(f"\nProcessing plan:")
         if pdf_count:
-            print(f"  {pdf_count} documents → transcribe + format + rename")
+            print(f"  {pdf_count} documents -> transcribe + format + rename")
         if audio_count:
-            print(f"  {audio_count} audio files → transcribe + format + rename")
+            print(f"  {audio_count} audio files -> transcribe + format + rename")
 
 
 # ── Execute phase ───────────────────────────────────────────────────────────
