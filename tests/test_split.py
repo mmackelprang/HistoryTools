@@ -116,6 +116,38 @@ class TestParseTranscriptPages:
         assert "Line two." in pages[1]
         assert "Line three." in pages[1]
 
+    def test_formatted_page_markers(self):
+        """Handles *Page N* markers from the mechanical formatter."""
+        body = "---\n*Page 1*\nFirst page text.\n\n---\n*Page 2*\nSecond page text."
+        pages = parse_transcript_pages(body)
+        assert len(pages) == 2
+        assert "First page" in pages[1]
+        assert "Second page" in pages[2]
+
+    def test_implied_page_1_before_page_2(self):
+        """Content before the first page marker is page 1."""
+        body = "Hope Johnson\n1010 E. Orange\nTempe, Az\n\n---\n*Page 2*\nDear Mark,"
+        pages = parse_transcript_pages(body)
+        assert 1 in pages
+        assert "Hope Johnson" in pages[1]
+        assert 2 in pages
+        assert "Dear Mark" in pages[2]
+
+    def test_implied_page_1_with_summary_before_markers(self):
+        """Content before first marker (including AI summary) captured as page 1."""
+        body = "> Summary of the document.\n\nActual page 1 content here.\n\n---\n*Page 2*\nPage two text."
+        pages = parse_transcript_pages(body)
+        assert 1 in pages
+        assert "page 1 content" in pages[1]
+        assert 2 in pages
+
+    def test_mixed_raw_and_formatted_markers(self):
+        """Handles mix of ## Page N and *Page N* (shouldn't happen but be safe)."""
+        body = "## Page 1\nFirst.\n\n---\n*Page 2*\nSecond."
+        pages = parse_transcript_pages(body)
+        assert 1 in pages
+        assert 2 in pages
+
 
 # ── get_page_preview() ──────────────────────────────────────────────────────
 

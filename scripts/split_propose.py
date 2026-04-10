@@ -96,8 +96,13 @@ def find_splittable_pdfs(dest_root, min_pages=5, transcribe_folders=None):
 def parse_transcript_pages(transcript_body):
     """Parse transcript body into dict of {page_num: text}.
 
-    Handles transcripts with ## Page N markers. If no markers are found,
-    returns {1: full_text}.
+    Handles multiple marker formats:
+    - Raw: ## Page N
+    - Formatted: *Page N* (from mechanical formatter)
+    - Formatted with HR: ---\\n*Page N*
+
+    Content before the first page marker is assigned to page 1 (implied).
+    If no markers are found, returns {1: full_text}.
 
     Args:
         transcript_body: The body text of a transcript (after frontmatter).
@@ -108,8 +113,12 @@ def parse_transcript_pages(transcript_body):
     if not transcript_body or not transcript_body.strip():
         return {}
 
-    # Split on ## Page N markers
-    page_pattern = re.compile(r"^## Page (\d+)\s*$", re.MULTILINE)
+    # Match both raw (## Page N) and formatted (*Page N*) markers
+    # Also handles --- before *Page N* from the formatter
+    page_pattern = re.compile(
+        r"(?:^---\s*\n)?\s*(?:## Page|[*]Page)\s+(\d+)[*]?\s*$",
+        re.MULTILINE,
+    )
     matches = list(page_pattern.finditer(transcript_body))
 
     if not matches:
@@ -117,11 +126,30 @@ def parse_transcript_pages(transcript_body):
         return {1: transcript_body.strip()}
 
     pages = {}
+
+    # Content before the first marker is page 1 (implied)
+    pre_content = transcript_body[:matches[0].start()].strip()
+    if pre_content:
+        # Check if page 1 already appears in the markers
+        first_marker_page = int(matches[0].group(1))
+        if first_marker_page != 1:
+            # Content before first marker is an implied page 1
+            pages[1] = pre_content
+        else:
+            # First marker IS page 1 — pre_content might be summary/header, prepend it
+            pass  # will be handled below with page 1's content
+
     for i, match in enumerate(matches):
         page_num = int(match.group(1))
         start = match.end()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(transcript_body)
-        pages[page_num] = transcript_body[start:end].strip()
+        page_text = transcript_body[start:end].strip()
+
+        # If page 1 had pre-content and this IS page 1, prepend it
+        if page_num == 1 and pre_content and 1 not in pages:
+            page_text = pre_content + "\n\n" + page_text if page_text else pre_content
+
+        pages[page_num] = page_text
 
     return pages
 
