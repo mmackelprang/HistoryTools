@@ -155,6 +155,18 @@ family-archive duplicates
 family-archive report
 ```
 
+### 11. Review AI Costs
+
+After running AI-powered commands, review what you spent:
+
+```bash
+family-archive costs              # summary by pipeline step
+family-archive costs --detail     # include per-session breakdown
+```
+
+Costs are tracked automatically in `_costs.json` in the archive root.
+Each AI API call records token usage and estimated cost by model.
+
 ## Tips
 
 - **Start with `--dry-run`** on every command to preview what will happen

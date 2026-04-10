@@ -24,6 +24,7 @@ import fitz  # PyMuPDF
 
 sys.path.insert(0, str(Path(__file__).parent))
 from config import load_config
+from quality_check import assess_text_quality
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 
@@ -59,13 +60,22 @@ def extract_text_tesseract(pdf_path, tesseract_path):
     return pages
 
 def extract_text(pdf_path, tesseract_path):
-    """Try native text extraction, fall back to OCR."""
+    """Try native text extraction, fall back to OCR.
+
+    Uses quality assessment to detect garbage text from native extraction
+    (e.g., garbled output from handwritten documents with embedded fonts).
+    """
     pages = extract_text_pymupdf(pdf_path)
     total_text = " ".join(pages)
     word_count = len(total_text.split())
 
     if word_count > 20:
-        return pages, "native", word_count
+        # Check quality of native extraction
+        assessment = assess_text_quality(total_text)
+        if assessment["quality"] == "good":
+            return pages, "native", word_count
+        # "suspect" or "poor" -- fall through to Tesseract
+        # Native extraction produced garbage (common with handwritten docs)
 
     pages = extract_text_tesseract(pdf_path, tesseract_path)
     total_text = " ".join(pages)
@@ -105,9 +115,12 @@ def create_transcript_md(pdf_path, pages, method, word_count, dest_root):
     meta = infer_metadata(pdf_path, dest_root)
     md_path = pdf_path.with_suffix(".transcript.md")
 
-    if method == "native" and word_count > 100:
+    # Assess confidence using quality check
+    total_text = " ".join(pages)
+    assessment = assess_text_quality(total_text)
+    if method == "native" and assessment["quality"] == "good" and word_count > 100:
         confidence = "high"
-    elif method == "ocr" and word_count > 50:
+    elif assessment["quality"] in ("good", "suspect") and word_count > 50:
         confidence = "medium"
     else:
         confidence = "low"

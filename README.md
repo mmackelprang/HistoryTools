@@ -110,6 +110,10 @@ family-archive photos
 family-archive duplicates
 family-archive report
 
+# Review AI API costs
+family-archive costs              # summary by pipeline step
+family-archive costs --detail     # per-session breakdown
+
 # Check tool installation
 family-archive verify
 ```
@@ -156,6 +160,10 @@ These features require API keys (see [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEY
 All AI features are optional. Without API keys, local tools (Tesseract OCR, Whisper) are used instead.
 A unified AI client (`ai_client.py`) supports Gemini, OpenAI, and Anthropic — vendor swapping
 via a `--vendor` CLI flag is planned for an upcoming release.
+
+AI costs are tracked automatically. Run `family-archive costs` to see token usage and
+estimated spend across all sessions. Costs are estimates based on published per-token
+pricing — compare against your vendor dashboards for exact billing.
 
 ## Modes
 

@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from config import load_env
+from cost_tracker import get_tracker
 
 RETRYABLE_CODES = {429, 500, 502, 503, 504, 529}
 MAX_RETRIES = 3
@@ -87,7 +88,8 @@ def get_ai_client(vendor=None, api_key_env=None):
         raise ValueError(f"Unknown vendor: {vendor}. Use 'gemini', 'openai', 'anthropic', or 'cloud'.")
 
 
-def call_text(client, vendor, prompt, model=None, max_tokens=4096):
+def call_text(client, vendor, prompt, model=None, max_tokens=4096,
+              pipeline_step="unknown", file_path=None):
     """Send a text prompt to any AI vendor. Returns response text.
 
     Args:
@@ -96,6 +98,8 @@ def call_text(client, vendor, prompt, model=None, max_tokens=4096):
         prompt: Text prompt
         model: Model name override (vendor-specific)
         max_tokens: Max output tokens
+        pipeline_step: Name of the pipeline step (for cost tracking)
+        file_path: File being processed (for cost tracking)
     """
     defaults = {
         "gemini": "gemini-2.5-flash",
@@ -103,11 +107,18 @@ def call_text(client, vendor, prompt, model=None, max_tokens=4096):
         "anthropic": "claude-haiku-4-5-20251001",
     }
     model = model or defaults.get(vendor, "gpt-4o-mini")
+    tracker = get_tracker()
 
     for attempt in range(MAX_RETRIES + 1):
         try:
             if vendor == "gemini":
                 response = client.models.generate_content(model=model, contents=[prompt])
+                usage = getattr(response, 'usage_metadata', None)
+                if usage:
+                    tracker.record(vendor, model,
+                        getattr(usage, 'prompt_token_count', 0),
+                        getattr(usage, 'candidates_token_count', 0),
+                        pipeline_step=pipeline_step, file_path=file_path)
                 if response.text is None:
                     return ""
                 return response.text.strip()
@@ -118,6 +129,11 @@ def call_text(client, vendor, prompt, model=None, max_tokens=4096):
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=max_tokens,
                 )
+                if response.usage:
+                    tracker.record(vendor, model,
+                        response.usage.prompt_tokens,
+                        response.usage.completion_tokens,
+                        pipeline_step=pipeline_step, file_path=file_path)
                 content = response.choices[0].message.content
                 return content.strip() if content else ""
 
@@ -131,6 +147,12 @@ def call_text(client, vendor, prompt, model=None, max_tokens=4096):
                 ) as stream:
                     for text in stream.text_stream:
                         text_parts.append(text)
+                    final_message = stream.get_final_message()
+                if final_message and hasattr(final_message, 'usage') and final_message.usage:
+                    tracker.record(vendor, model,
+                        final_message.usage.input_tokens,
+                        final_message.usage.output_tokens,
+                        pipeline_step=pipeline_step, file_path=file_path)
                 return "".join(text_parts)
 
             else:
@@ -147,7 +169,8 @@ def call_text(client, vendor, prompt, model=None, max_tokens=4096):
             raise
 
 
-def call_vision(client, vendor, prompt, image_bytes, model=None, max_tokens=4096):
+def call_vision(client, vendor, prompt, image_bytes, model=None, max_tokens=4096,
+                pipeline_step="unknown", file_path=None):
     """Send a text prompt with an image to any AI vendor with vision support. Returns response text.
 
     Args:
@@ -157,6 +180,8 @@ def call_vision(client, vendor, prompt, image_bytes, model=None, max_tokens=4096
         image_bytes: Image as bytes (PNG or JPEG)
         model: Model name override
         max_tokens: Max output tokens
+        pipeline_step: Name of the pipeline step (for cost tracking)
+        file_path: File being processed (for cost tracking)
     """
     import base64
 
@@ -165,6 +190,7 @@ def call_vision(client, vendor, prompt, image_bytes, model=None, max_tokens=4096
         "openai": "gpt-4o",
     }
     model = model or defaults.get(vendor, "gpt-4o")
+    tracker = get_tracker()
 
     # Detect MIME type
     mime_type = "image/jpeg" if image_bytes[:2] == b'\xff\xd8' else "image/png"
@@ -175,6 +201,12 @@ def call_vision(client, vendor, prompt, image_bytes, model=None, max_tokens=4096
                 from google.genai import types
                 image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
                 response = client.models.generate_content(model=model, contents=[prompt, image_part])
+                usage = getattr(response, 'usage_metadata', None)
+                if usage:
+                    tracker.record(vendor, model,
+                        getattr(usage, 'prompt_token_count', 0),
+                        getattr(usage, 'candidates_token_count', 0),
+                        pipeline_step=pipeline_step, file_path=file_path)
                 if response.text is None:
                     return "[Page appears blank or illegible]"
                 return response.text.strip()
@@ -194,6 +226,11 @@ def call_vision(client, vendor, prompt, image_bytes, model=None, max_tokens=4096
                     }],
                     max_tokens=max_tokens,
                 )
+                if response.usage:
+                    tracker.record(vendor, model,
+                        response.usage.prompt_tokens,
+                        response.usage.completion_tokens,
+                        pipeline_step=pipeline_step, file_path=file_path)
                 content = response.choices[0].message.content
                 return content.strip() if content else "[Page appears blank or illegible]"
 

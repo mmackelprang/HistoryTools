@@ -144,6 +144,69 @@ def cmd_split(args):
     main()
 
 
+def cmd_costs(args):
+    """Show AI API cost summary from _costs.json."""
+    import json as _json
+    from pathlib import Path as _Path
+
+    # Find config to get dest_root
+    try:
+        sys.path.insert(0, str(_Path(__file__).resolve().parent))
+        from .config import load_config
+        config = load_config()
+        dest_root = config["dest_root"]
+    except Exception:
+        # Fallback: look in current directory
+        dest_root = _Path.cwd()
+
+    costs_path = _Path(dest_root) / "_costs.json"
+    if not costs_path.exists():
+        print("No cost data found. AI cost tracking records usage in _costs.json")
+        print("after running AI-powered commands (transcribe, format, rename, etc.).")
+        return
+
+    with open(costs_path, "r", encoding="utf-8") as f:
+        sessions = _json.load(f)
+
+    if not sessions:
+        print("No cost data recorded yet.")
+        return
+
+    total_cost = sum(s.get("total_cost_usd", 0) for s in sessions)
+    total_calls = sum(s.get("total_calls", 0) for s in sessions)
+    total_input = sum(s.get("total_input_tokens", 0) for s in sessions)
+    total_output = sum(s.get("total_output_tokens", 0) for s in sessions)
+
+    # Aggregate by step across all sessions
+    by_step = {}
+    for s in sessions:
+        for step, data in s.get("by_step", {}).items():
+            if step not in by_step:
+                by_step[step] = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+            by_step[step]["calls"] += data.get("calls", 0)
+            by_step[step]["input_tokens"] += data.get("input_tokens", 0)
+            by_step[step]["output_tokens"] += data.get("output_tokens", 0)
+            by_step[step]["cost_usd"] += data.get("cost_usd", 0.0)
+
+    print(f"\nAI Cost Summary ({len(sessions)} sessions, {total_calls} calls)")
+    print(f"{'=' * 55}")
+
+    if by_step:
+        for step, data in sorted(by_step.items()):
+            print(f"  {step:30s} {data['calls']:4d} calls  ${data['cost_usd']:.4f}")
+        print(f"  {'─' * 51}")
+
+    print(f"  {'TOTAL':30s} {total_calls:4d} calls  ${total_cost:.4f}")
+    print(f"  Tokens: {total_input:,} in / {total_output:,} out")
+
+    if '--detail' in args:
+        print(f"\n{'─' * 55}")
+        print("Session details:")
+        for i, s in enumerate(sessions, 1):
+            start = s.get("session_start", "?")[:19]
+            print(f"  {i}. {start}  {s.get('total_calls', 0)} calls  ${s.get('total_cost_usd', 0):.4f}")
+
+
 def cmd_placeholder(name):
     """Return a handler for placeholder commands."""
     def handler(args):
@@ -182,6 +245,7 @@ def main():
     subparsers.add_parser('report', help='Generate archive summary report')
     subparsers.add_parser('verify', help='Verify required tools are installed')
     subparsers.add_parser('split', help='Split compilation PDFs into individual documents (or --apply)')
+    subparsers.add_parser('costs', help='Show AI API cost summary (--detail for session breakdown)')
     subparsers.add_parser('search', help='Search archive contents (coming soon)')
     subparsers.add_parser('serve', help='Start web UI for browsing (coming soon)')
 
@@ -207,6 +271,7 @@ def main():
         'report': cmd_report,
         'verify': cmd_verify,
         'split': cmd_split,
+        'costs': cmd_costs,
         'search': cmd_placeholder('search'),
         'serve': cmd_placeholder('serve'),
     }
