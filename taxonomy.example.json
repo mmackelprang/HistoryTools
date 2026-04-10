@@ -1,0 +1,144 @@
+{
+  "_comment": "Taxonomy configuration for HistoryTools. This file defines how files are classified, where they are routed, and what processing pipelines apply. Copy to taxonomy.json and customize as needed.",
+  "version": 1,
+
+  "_comment_file_types": "File type definitions. Each type maps a set of extensions to a category. Optional 'route_to' sets the default destination folder for that type.",
+  "file_types": {
+    "audio": {
+      "_comment": "Audio recordings — family recordings, cassette tapes, music",
+      "extensions": [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".wma"],
+      "route_to": "Media/Audio/FamilyRecordings"
+    },
+    "video": {
+      "_comment": "Video files",
+      "extensions": [".mp4", ".mov", ".avi", ".mkv", ".wmv"],
+      "route_to": "Media/Video"
+    },
+    "photo": {
+      "_comment": "Photographs and images",
+      "extensions": [".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".heic"],
+      "route_to": "Media/Photos"
+    },
+    "document": {
+      "_comment": "Text documents — no default route_to because documents need context-based classification",
+      "extensions": [".pdf", ".doc", ".docx", ".txt", ".rtf"]
+    },
+    "spreadsheet": {
+      "_comment": "Spreadsheets always go to NeedsReview for manual classification",
+      "extensions": [".xls", ".xlsx", ".csv"],
+      "route_to": "NeedsReview"
+    },
+    "email": {
+      "_comment": "Email archives",
+      "extensions": [".eml", ".mbox", ".pst"],
+      "route_to": "_imports/EmailArchives"
+    },
+    "genealogy": {
+      "_comment": "Genealogy data files (GEDCOM)",
+      "extensions": [".gedcom", ".ged"],
+      "route_to": "_imports"
+    }
+  },
+
+  "_comment_folders": "Folder definitions. Each entry maps keywords to a destination folder. 'keywords' are matched against source folder names (folder hints). 'filename_keywords' are matched against the filename stem. Add new folders or keywords to customize classification.",
+  "folders": {
+    "Correspondence/Letters": {
+      "keywords": ["letter", "letters", "correspondence"],
+      "filename_keywords": ["letter"],
+      "description": "Personal correspondence and letters"
+    },
+    "Correspondence/Cards": {
+      "keywords": ["card", "cards", "postcard"],
+      "filename_keywords": ["postcard", "card"],
+      "description": "Greeting cards and postcards"
+    },
+    "Journals": {
+      "keywords": ["journal", "journals", "diary", "diaries"],
+      "filename_keywords": ["journal", "diary"],
+      "description": "Diaries and journals"
+    },
+    "Documents/Church": {
+      "keywords": ["church", "religious"],
+      "description": "Church and religious documents"
+    },
+    "Documents/Education": {
+      "keywords": ["school", "education", "homework"],
+      "description": "School and education documents"
+    },
+    "Documents/Legal": {
+      "keywords": ["legal", "certificate"],
+      "description": "Legal documents and certificates"
+    },
+    "Documents/Employment": {
+      "keywords": ["employment", "work"],
+      "description": "Employment and work documents"
+    },
+    "Documents/Writings": {
+      "keywords": ["writing", "writings", "essay"],
+      "description": "Personal writings and essays"
+    },
+    "Documents/Recipes": {
+      "keywords": ["recipe", "recipes", "cookbook"],
+      "filename_keywords": ["recipe"],
+      "description": "Recipes and cookbooks"
+    },
+    "Financial": {
+      "keywords": ["financial", "finance"],
+      "description": "Financial documents"
+    },
+    "Financial/Taxes": {
+      "keywords": ["tax", "taxes"],
+      "description": "Tax documents"
+    },
+    "Financial/Insurance": {
+      "keywords": ["insurance"],
+      "description": "Insurance documents"
+    },
+    "Financial/BillsAndReceipts": {
+      "keywords": ["bill", "bills", "receipt", "receipts"],
+      "description": "Bills and receipts"
+    },
+    "Medical": {
+      "keywords": ["medical", "health"],
+      "description": "Medical and health records"
+    },
+    "Medical/Dental": {
+      "keywords": ["dental"],
+      "description": "Dental records"
+    },
+    "Media/Photos": {
+      "keywords": ["photo", "photos", "picture", "pictures"],
+      "description": "Photographs"
+    },
+    "Media/Audio/FamilyRecordings": {
+      "keywords": ["audio", "recording", "recordings"],
+      "description": "Family audio recordings"
+    },
+    "Media/Audio/CassetteTapes": {
+      "keywords": ["tape", "tapes", "cassette"],
+      "description": "Cassette tape recordings"
+    },
+    "Media/Audio/Songs": {
+      "keywords": ["music", "song", "songs"],
+      "description": "Music and songs"
+    },
+    "Media/Video": {
+      "keywords": ["video", "videos", "movie", "movies"],
+      "description": "Video recordings"
+    },
+    "Memories": {
+      "keywords": ["memory", "memories", "memorial", "obituary"],
+      "filename_keywords": ["obituary", "eulogy", "memoir"],
+      "description": "Memorials, obituaries, and eulogies"
+    }
+  },
+
+  "_comment_processing_pipelines": "Processing pipelines define what steps run for each file type. 'default' is used when no specific pipeline matches. Pipelines only apply when the destination folder is not NeedsReview or Unprocessed.",
+  "processing_pipelines": {
+    "document": ["copy", "transcribe", "format", "rename", "detect_date"],
+    "audio": ["copy", "transcribe_audio", "format", "rename"],
+    "photo": ["copy", "catalog_photos"],
+    "video": ["copy"],
+    "default": ["copy"]
+  }
+}

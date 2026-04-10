@@ -1,12 +1,161 @@
 """
 Shared configuration for the Archive Organizer Toolkit.
 Edit config.json in the Toolkit root to set paths and options.
+Edit taxonomy.json to customize file classification rules.
 """
 
 import json
 from pathlib import Path
 
 TOOLKIT_DIR = Path(__file__).resolve().parent.parent
+
+# ── Default taxonomy (fallback when taxonomy.json is absent) ──────────────────
+
+DEFAULT_TAXONOMY = {
+    "version": 1,
+    "file_types": {
+        "audio": {
+            "extensions": [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".wma"],
+            "route_to": "Media/Audio/FamilyRecordings",
+        },
+        "video": {
+            "extensions": [".mp4", ".mov", ".avi", ".mkv", ".wmv"],
+            "route_to": "Media/Video",
+        },
+        "photo": {
+            "extensions": [".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".heic"],
+            "route_to": "Media/Photos",
+        },
+        "document": {
+            "extensions": [".pdf", ".doc", ".docx", ".txt", ".rtf"],
+        },
+        "spreadsheet": {
+            "extensions": [".xls", ".xlsx", ".csv"],
+            "route_to": "NeedsReview",
+        },
+        "email": {
+            "extensions": [".eml", ".mbox", ".pst"],
+            "route_to": "_imports/EmailArchives",
+        },
+        "genealogy": {
+            "extensions": [".gedcom", ".ged"],
+            "route_to": "_imports",
+        },
+    },
+    "folders": {
+        "Correspondence/Letters": {
+            "keywords": ["letter", "letters", "correspondence"],
+            "filename_keywords": ["letter"],
+            "description": "Personal correspondence and letters",
+        },
+        "Correspondence/Cards": {
+            "keywords": ["card", "cards", "postcard"],
+            "filename_keywords": ["postcard", "card"],
+            "description": "Greeting cards and postcards",
+        },
+        "Journals": {
+            "keywords": ["journal", "journals", "diary", "diaries"],
+            "filename_keywords": ["journal", "diary"],
+            "description": "Diaries and journals",
+        },
+        "Documents/Church": {
+            "keywords": ["church", "religious"],
+            "description": "Church and religious documents",
+        },
+        "Documents/Education": {
+            "keywords": ["school", "education", "homework"],
+            "description": "School and education documents",
+        },
+        "Documents/Legal": {
+            "keywords": ["legal", "certificate"],
+            "description": "Legal documents and certificates",
+        },
+        "Documents/Employment": {
+            "keywords": ["employment", "work"],
+            "description": "Employment and work documents",
+        },
+        "Documents/Writings": {
+            "keywords": ["writing", "writings", "essay"],
+            "description": "Personal writings and essays",
+        },
+        "Documents/Recipes": {
+            "keywords": ["recipe", "recipes", "cookbook"],
+            "filename_keywords": ["recipe"],
+            "description": "Recipes and cookbooks",
+        },
+        "Financial": {
+            "keywords": ["financial", "finance"],
+            "description": "Financial documents",
+        },
+        "Financial/Taxes": {
+            "keywords": ["tax", "taxes"],
+            "description": "Tax documents",
+        },
+        "Financial/Insurance": {
+            "keywords": ["insurance"],
+            "description": "Insurance documents",
+        },
+        "Financial/BillsAndReceipts": {
+            "keywords": ["bill", "bills", "receipt", "receipts"],
+            "description": "Bills and receipts",
+        },
+        "Medical": {
+            "keywords": ["medical", "health"],
+            "description": "Medical and health records",
+        },
+        "Medical/Dental": {
+            "keywords": ["dental"],
+            "description": "Dental records",
+        },
+        "Media/Photos": {
+            "keywords": ["photo", "photos", "picture", "pictures"],
+            "description": "Photographs",
+        },
+        "Media/Audio/FamilyRecordings": {
+            "keywords": ["audio", "recording", "recordings"],
+            "description": "Family audio recordings",
+        },
+        "Media/Audio/CassetteTapes": {
+            "keywords": ["tape", "tapes", "cassette"],
+            "description": "Cassette tape recordings",
+        },
+        "Media/Audio/Songs": {
+            "keywords": ["music", "song", "songs"],
+            "description": "Music and songs",
+        },
+        "Media/Video": {
+            "keywords": ["video", "videos", "movie", "movies"],
+            "description": "Video recordings",
+        },
+        "Memories": {
+            "keywords": ["memory", "memories", "memorial", "obituary"],
+            "filename_keywords": ["obituary", "eulogy", "memoir"],
+            "description": "Memorials, obituaries, and eulogies",
+        },
+    },
+    "processing_pipelines": {
+        "document": ["copy", "transcribe", "format", "rename", "detect_date"],
+        "audio": ["copy", "transcribe_audio", "format", "rename"],
+        "photo": ["copy", "catalog_photos"],
+        "video": ["copy"],
+        "default": ["copy"],
+    },
+}
+
+
+def load_taxonomy(taxonomy_path=None):
+    """Load taxonomy configuration from taxonomy.json.
+
+    Falls back to DEFAULT_TAXONOMY when the file is absent.
+    """
+    if taxonomy_path is None:
+        taxonomy_path = TOOLKIT_DIR / "taxonomy.json"
+
+    if not Path(taxonomy_path).exists():
+        return DEFAULT_TAXONOMY.copy()
+
+    with open(taxonomy_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
 DEFAULT_CONFIG = {
     "source_root": "",           # REQUIRED: path to source files
     "dest_root": "",             # REQUIRED: path to output organized folder
