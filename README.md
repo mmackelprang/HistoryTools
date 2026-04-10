@@ -246,10 +246,10 @@ System tools (install separately): [Tesseract OCR](https://github.com/tesseract-
 ## Roadmap
 
 - **Phase 1** (current): CLI toolkit for documents, audio, and basic organization
-- **Phase 2**: Library refactor, SQLite index, video transcription, email import, document splitting
+- **Phase 2**: Library refactor, SQLite index, entity extraction, document splitting, video transcription
 - **Phase 3**: Web UI for browsing, searching, and managing the archive
 - **Phase 4**: Photo AI (scene descriptions, face recognition, date estimation)
-- **Phase 5**: SMS import, Google Timeline, email import — correlation engine
+- **Phase 5**: SMS/email/Google Timeline import, correlation engine, HistoryTools Cloud launch
 - **Phase 6**: Timeline view, map view, people graph — life history visualization
 - **Phase 7**: Narrative generation, FamilySearch integration
 - **Phase 8**: Multi-family support, sharing, collaboration

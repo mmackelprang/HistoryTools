@@ -59,6 +59,29 @@ class TestGetAiClient:
                 with pytest.raises(ValueError, match="OPENAI_API_KEY not set"):
                     get_ai_client(vendor="openai")
 
+    def test_cloud_vendor_without_key_raises(self):
+        """Requesting cloud without a key raises ValueError."""
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("ai_client.load_env"):
+                with pytest.raises(ValueError, match="HISTORYTOOLS_API_KEY not set"):
+                    get_ai_client(vendor="cloud")
+
+    def test_cloud_vendor_with_key_raises_not_implemented(self):
+        """Cloud vendor with key raises NotImplementedError (coming soon)."""
+        env = {"HISTORYTOOLS_API_KEY": "ht_test_key"}
+        with patch.dict(os.environ, env, clear=True):
+            with patch("ai_client.load_env"):
+                with pytest.raises(NotImplementedError, match="not yet available"):
+                    get_ai_client(vendor="cloud")
+
+    def test_cloud_takes_priority_in_auto_detect(self):
+        """When HISTORYTOOLS_API_KEY is set, cloud is preferred over other vendors."""
+        env = {"HISTORYTOOLS_API_KEY": "ht_key", "GEMINI_API_KEY": "gem_key"}
+        with patch.dict(os.environ, env, clear=True):
+            with patch("ai_client.load_env"):
+                with pytest.raises(NotImplementedError, match="not yet available"):
+                    get_ai_client()  # should auto-detect cloud
+
     def test_explicit_vendor_anthropic_without_key_raises(self):
         """Requesting anthropic explicitly without a key raises ValueError."""
         with patch.dict(os.environ, {}, clear=True):

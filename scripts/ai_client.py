@@ -29,15 +29,17 @@ def get_ai_client(vendor=None, api_key_env=None):
     load_env()
 
     if vendor is None:
-        # Auto-detect based on available keys
-        if os.environ.get("GEMINI_API_KEY"):
+        # Auto-detect based on available keys (cloud takes priority if set)
+        if os.environ.get("HISTORYTOOLS_API_KEY"):
+            vendor = "cloud"
+        elif os.environ.get("GEMINI_API_KEY"):
             vendor = "gemini"
         elif os.environ.get("OPENAI_API_KEY"):
             vendor = "openai"
         elif os.environ.get("ANTHROPIC_API_KEY"):
             vendor = "anthropic"
         else:
-            raise ValueError("No AI API key found. Set GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in .env")
+            raise ValueError("No AI API key found. Set GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, or HISTORYTOOLS_API_KEY in .env")
 
     if vendor == "gemini":
         key = os.environ.get(api_key_env or "GEMINI_API_KEY")
@@ -69,8 +71,20 @@ def get_ai_client(vendor=None, api_key_env=None):
             raise ValueError("anthropic package not installed. Run: pip install anthropic")
         return anthropic.Anthropic(api_key=key), "anthropic"
 
+    elif vendor == "cloud":
+        key = os.environ.get(api_key_env or "HISTORYTOOLS_API_KEY")
+        if not key:
+            raise ValueError("HISTORYTOOLS_API_KEY not set in .env")
+        # Cloud vendor is a managed AI gateway — coming soon.
+        # When available, this will route to https://api.historytools.io
+        raise NotImplementedError(
+            "HistoryTools Cloud is not yet available. "
+            "Use 'gemini', 'openai', or 'anthropic' instead, "
+            "or visit https://historytools.io for updates."
+        )
+
     else:
-        raise ValueError(f"Unknown vendor: {vendor}. Use 'gemini', 'openai', or 'anthropic'.")
+        raise ValueError(f"Unknown vendor: {vendor}. Use 'gemini', 'openai', 'anthropic', or 'cloud'.")
 
 
 def call_text(client, vendor, prompt, model=None, max_tokens=4096):

@@ -1123,21 +1123,113 @@ WHERE ref1.artifact_id = 42  -- the letter
   AND anch2.anchor_type = 'timestamp';
 ```
 
+### HistoryTools Cloud — Managed AI Gateway
+
+The open-source toolkit is fully functional with self-managed API keys. For users who
+want a simpler experience, **HistoryTools Cloud** is a planned managed AI gateway that
+provides a single API key for all AI features.
+
+**How it works:**
+
+```
+User's machine                        HistoryTools Cloud
++------------------+                  +---------------------+
+| HistoryTools CLI |  -- HTTPS -->    | AI Gateway          |
+|                  |                  |                     |
+| HISTORYTOOLS_    |                  | Smart routing:      |
+|   API_KEY=ht_... |                  | - Cheapest model    |
++------------------+                  | - Auto-failover     |
+                                      | - Rate balancing    |
+                                      | - Usage metering    |
+                                      |                     |
+                                      | Backends:           |
+                                      | +- Gemini           |
+                                      | +- OpenAI           |
+                                      | +- Anthropic        |
+                                      | +- (future vendors) |
+                                      +---------------------+
+```
+
+**Benefits for users:**
+- One API key instead of three (or four)
+- No need to manage billing across multiple AI providers
+- Automatic failover (if Gemini is down, requests route to OpenAI)
+- Smart model selection (cheapest available model for each task type)
+- Usage dashboard and spending controls
+
+**Business model (open core):**
+- The CLI toolkit remains free and open-source, fully functional with self-managed keys
+- HistoryTools Cloud is a paid managed service for convenience
+- Users choose: manage your own keys (free) or pay for managed simplicity
+
+**Implementation:**
+- A `cloud` vendor in `ai_client.py` routes requests to the gateway via simple REST API
+- The gateway manages backend API keys centrally (users never see them)
+- The gateway selects the cheapest available backend per request type
+- Usage is metered per user for subscription billing
+
+**Planned pricing tiers:**
+
+| Tier | Price | Requests/month | Best for |
+|------|-------|---------------|----------|
+| Free | $0 | Local tools only | Users who manage their own API keys |
+| Starter | ~$5/mo | ~500 | Small archives, getting started |
+| Standard | ~$15/mo | ~5,000 | Most family archives |
+| Unlimited | ~$30/mo | Unlimited | Power users, large archives |
+
+### Entity Extraction Pipeline
+
+A critical pipeline component for building the hyper-personal-web: automatically
+extracting structured entities (people, places, dates, events) from transcripts and
+linking them back to specific locations in the source material.
+
+**How it works:**
+
+1. Read a formatted transcript
+2. Send to AI with entity extraction prompt
+3. AI returns structured JSON with entities and their locations (anchors)
+4. Store in SQLite (entities, references, anchors tables)
+
+**Example output for a letter:**
+
+```json
+{
+  "entities": [
+    {"type": "person", "name": "Alice", "role": "author", "anchor": {"page": 1, "paragraph": 1}},
+    {"type": "person", "name": "Bob", "role": "recipient", "anchor": {"page": 1, "paragraph": 1}},
+    {"type": "place", "name": "Springfield", "anchor": {"page": 2, "paragraph": 3, "snippet": "we drove to Springfield"}},
+    {"type": "event", "name": "Christmas gathering", "date": "1983-12-25", "anchor": {"page": 2, "paragraph": 5}}
+  ]
+}
+```
+
+**CLI:**
+
+```
+family-archive extract-entities                    # all transcripts
+family-archive extract-entities --folder Letters   # one folder
+family-archive extract-entities --file path.md     # single file
+```
+
+This feeds directly into the SQLite correlation engine and enables the timeline,
+map, and people graph views.
+
 ### Phasing for the Vision
 
 This vision extends well beyond the initial 4 phases:
 
-- **Phase 1-2**: Core archive toolkit (what we're building now)
+- **Phase 1**: Core archive toolkit — organize, transcribe, format, rename, bootstrap (current)
+- **Phase 2**: Library refactor, SQLite index, entity extraction, document splitting, video transcription, email import. HistoryTools Cloud gateway stub.
 - **Phase 3**: Web UI for browsing and managing the archive
 - **Phase 4**: Photo AI, face recognition, advanced search
-- **Phase 5**: Google Timeline import, SMS import, email import — building the event/correlation layer
+- **Phase 5**: Google Timeline import, SMS import, email import — building the event/correlation layer. HistoryTools Cloud launch.
 - **Phase 6**: Timeline view, map view, people graph — the life history visualization
 - **Phase 7**: Narrative generation — AI-assembled life story chapters. FamilySearch integration (import family tree data, link archive items to FamilySearch person records, pull metadata like dates/places/relationships to enrich the archive, and eventually contribute photos/stories/documents back to FamilySearch Memories)
 - **Phase 8**: Multi-family support, sharing, collaboration — families connecting their archives. Deeper FamilySearch integration: auto-match documents to ancestors, suggest connections across family lines, sync tagged photos and stories bidirectionally with FamilySearch Memories
 
 The architecture decisions made now (filesystem as truth, SQLite as index, pluggable data
-sources, event-based correlation model) are designed to support this full vision without
-requiring a rewrite.
+sources, event-based correlation model, unified AI client) are designed to support this
+full vision without requiring a rewrite.
 
 ## Design Principles
 
