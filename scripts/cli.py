@@ -5,7 +5,7 @@ family-archive — Unified CLI entry point for the Family Archive Toolkit.
 Dispatches subcommands to existing script main() functions.
 
 Usage:
-    family-archive bootstrap /path/to/source
+    family-archive ingest /path/to/source
     family-archive organize --dry-run
     family-archive transcribe
     family-archive --help
@@ -36,10 +36,10 @@ def _get_version():
 __version__ = _get_version()
 
 
-def cmd_bootstrap(args):
+def cmd_ingest(args):
     """Scan, classify, and process a source folder into an organized archive."""
-    sys.argv = ['bootstrap'] + args
-    from .bootstrap import main
+    sys.argv = ['ingest'] + args
+    from .ingest import main
     main()
 
 
@@ -125,6 +125,13 @@ def cmd_verify(args):
     main()
 
 
+def cmd_init(args):
+    """Interactive setup wizard for first-time users."""
+    sys.argv = ['init'] + args
+    from .init_wizard import main
+    main()
+
+
 def cmd_placeholder(name):
     """Return a handler for placeholder commands."""
     def handler(args):
@@ -149,7 +156,8 @@ def main():
     # Each subcommand gets a parser entry. We don't define specific arguments here
     # because each script has its own argparse — we pass remaining args through.
 
-    subparsers.add_parser('bootstrap', help='Scan, classify, and process a source folder')
+    subparsers.add_parser('init', help='Interactive setup wizard for first-time users')
+    subparsers.add_parser('ingest', help='Scan, classify, and process a source folder')
     subparsers.add_parser('organize', help='Classify and copy files to organized folders')
     subparsers.add_parser('transcribe', help='Transcribe PDFs with AI vision (Gemini or OpenAI; --vendor planned)')
     subparsers.add_parser('transcribe-audio', help='Transcribe audio with AssemblyAI')
@@ -173,7 +181,8 @@ def main():
         sys.exit(1)
 
     dispatch = {
-        'bootstrap': cmd_bootstrap,
+        'init': cmd_init,
+        'ingest': cmd_ingest,
         'organize': cmd_organize,
         'transcribe': cmd_transcribe,
         'transcribe-audio': cmd_transcribe_audio,

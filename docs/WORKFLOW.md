@@ -2,25 +2,27 @@
 
 This guide walks through the recommended order for processing a family archive.
 
-## Prerequisites
+## Getting Started
 
-1. Install: `pip install -e ".[all]"`
-2. Verify tools: `family-archive verify`
-3. Configure paths: edit `config.json`
-4. Set up API keys (optional): see [SETUP-API-KEYS.md](SETUP-API-KEYS.md)
+```bash
+pip install -e ".[all]"     # install
+family-archive init          # interactive setup wizard
+```
+
+The init wizard creates your `config.json`, `.env` (API keys), and archive folder structure.
 
 ## Step-by-Step
 
-### 0. Bootstrap (Recommended for New Archives)
+### 0. Ingest (Recommended for New Archives)
 
-If you're starting from scratch with a folder of scans, use bootstrap to do everything at once:
+If you're starting from scratch with a folder of scans, use ingest to do everything at once:
 
 ```bash
-family-archive bootstrap /path/to/source --scan    # classify and preview
-family-archive bootstrap --execute                  # run full pipeline
+family-archive ingest /path/to/source --scan    # classify and preview
+family-archive ingest --execute                  # run full pipeline
 ```
 
-Bootstrap runs all the steps below automatically. You can also run each step individually
+Ingest runs all the steps below automatically. You can also run each step individually
 if you prefer more control.
 
 ### 1. Organize Files

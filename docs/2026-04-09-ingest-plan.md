@@ -1,10 +1,10 @@
-# Bootstrap Command Implementation Plan
+# Ingest Command Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a `bootstrap.py` command that scans a source directory, classifies all files, produces a reviewable plan, then executes the full processing pipeline (copy → transcribe → format → rename → date-detect).
+**Goal:** Build a `ingest.py` command that scans a source directory, classifies all files, produces a reviewable plan, then executes the full processing pipeline (copy → transcribe → format → rename → date-detect).
 
-**Architecture:** Single script `bootstrap.py` with two main phases: `scan` (classify files, produce JSON plan) and `execute` (read plan, run pipeline stages sequentially). Uses existing scripts via subprocess calls, following the same patterns as `run_all.py`. Classification uses filename patterns, folder name hints, and file extension mapping.
+**Architecture:** Single script `ingest.py` with two main phases: `scan` (classify files, produce JSON plan) and `execute` (read plan, run pipeline stages sequentially). Uses existing scripts via subprocess calls, following the same patterns as `run_all.py`. Classification uses filename patterns, folder name hints, and file extension mapping.
 
 **Tech Stack:** Python 3.13, existing toolkit scripts, hashlib (for merge-mode duplicate detection)
 
@@ -14,38 +14,38 @@
 
 ```
 scripts/
-├── bootstrap.py     # NEW — scan, classify, plan, execute
+├── ingest.py     # NEW — scan, classify, plan, execute
 └── ...existing scripts...
 ```
 
 ---
 
-### Task 1: Create `bootstrap.py` — Scanner and Classifier
+### Task 1: Create `ingest.py` — Scanner and Classifier
 
 **Files:**
-- Create: `scripts/bootstrap.py`
+- Create: `scripts/ingest.py`
 
-- [ ] **Step 1: Create `bootstrap.py` with scan/classify logic**
+- [ ] **Step 1: Create `ingest.py` with scan/classify logic**
 
-Create `D:/HistoryTools/scripts/bootstrap.py`:
+Create `D:/HistoryTools/scripts/ingest.py`:
 
 ```python
 #!/usr/bin/env python3
 """
-Bootstrap — Scan, classify, and process an entire source folder into an organized archive.
+Ingest — Scan, classify, and process an entire source folder into an organized archive.
 
 Phase 1 (scan): Recursively walk a source directory, classify every file by type,
-filename patterns, and folder context. Produce _bootstrap-plan.json for review.
+filename patterns, and folder context. Produce _ingest-plan.json for review.
 
 Phase 2 (execute): Read the approved plan and run the full processing pipeline:
 copy → transcribe → format → rename → date-detect → report.
 
 Usage:
-    python bootstrap.py /path/to/source --scan                # scan and classify
-    python bootstrap.py /path/to/source --scan --mode merge   # merge into existing
-    python bootstrap.py --execute                              # run the approved plan
-    python bootstrap.py /path/to/source                        # interactive: scan + approve + execute
-    python bootstrap.py --dry-run /path/to/source --scan       # preview scan
+    python ingest.py /path/to/source --scan                # scan and classify
+    python ingest.py /path/to/source --scan --mode merge   # merge into existing
+    python ingest.py --execute                              # run the approved plan
+    python ingest.py /path/to/source                        # interactive: scan + approve + execute
+    python ingest.py --dry-run /path/to/source --scan       # preview scan
 """
 
 import os
@@ -559,7 +559,7 @@ def run_script(script_name, extra_args=None):
 
 
 def execute_plan(plan, skip_transcribe=False, skip_format=False):
-    """Execute all stages of the bootstrap plan."""
+    """Execute all stages of the ingest plan."""
     dest_root = Path(plan["dest_root"])
     config_args = []
 
@@ -651,7 +651,7 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False):
 
     # Final summary
     print(f"\n{'=' * 60}")
-    print("Bootstrap complete!")
+    print("Ingest complete!")
     print(f"{'=' * 60}")
     print(f"\nNext steps:")
     print(f"  1. Review rename proposals: _rename-proposals.md")
@@ -666,7 +666,7 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Bootstrap — scan, classify, and process a source folder into an organized archive"
+        description="Ingest — scan, classify, and process a source folder into an organized archive"
     )
     parser.add_argument("source", nargs="?", help="Source directory to scan")
     parser.add_argument("--scan", action="store_true", help="Scan and classify only (produce plan)")
@@ -697,7 +697,7 @@ def main():
             print("ERROR: Provide a source directory or create config.json")
             sys.exit(1)
 
-    plan_path = Path(dest_root) / "_bootstrap-plan.json" if Path(dest_root).exists() else Path("_bootstrap-plan.json")
+    plan_path = Path(dest_root) / "_ingest-plan.json" if Path(dest_root).exists() else Path("_ingest-plan.json")
 
     # Execute mode
     if args.execute:
@@ -732,7 +732,7 @@ def main():
     plan = scan_source(source_root, dest_root, args.mode, exclude_dirs, exclude_exts)
 
     # Update plan path now that we know dest_root
-    plan_path = Path(plan["dest_root"]) / "_bootstrap-plan.json"
+    plan_path = Path(plan["dest_root"]) / "_ingest-plan.json"
     plan_path.parent.mkdir(parents=True, exist_ok=True)
 
     print_scan_summary(plan)
@@ -746,7 +746,7 @@ def main():
     print(f"\nPlan saved to {plan_path}")
 
     if args.scan:
-        print(f"Review the plan, then run: python scripts/bootstrap.py --execute")
+        print(f"Review the plan, then run: python scripts/ingest.py --execute")
         return
 
     # Interactive mode: ask for approval then execute
@@ -759,7 +759,7 @@ def main():
     if answer in ("y", "yes"):
         execute_plan(plan, args.skip_transcribe, args.skip_format)
     else:
-        print(f"Plan saved. Run later with: python scripts/bootstrap.py --execute")
+        print(f"Plan saved. Run later with: python scripts/ingest.py --execute")
 
 
 if __name__ == "__main__":
@@ -776,7 +776,7 @@ echo "test" > /tmp/test-archive/Photos/img001.jpg
 echo "test" > /tmp/test-archive/budget.xlsx
 echo "test" > /tmp/test-archive/mystery.xyz
 
-python scripts/bootstrap.py /tmp/test-archive --scan --dry-run
+python scripts/ingest.py /tmp/test-archive --scan --dry-run
 ```
 
 Expected: Shows classification summary with Letters, Photos, NeedsReview (xlsx), Unprocessed (xyz).
@@ -784,16 +784,16 @@ Expected: Shows classification summary with Letters, Photos, NeedsReview (xlsx),
 - [ ] **Step 3: Test interactive mode**
 
 ```bash
-python scripts/bootstrap.py /tmp/test-archive --scan
+python scripts/ingest.py /tmp/test-archive --scan
 ```
 
-Expected: Produces `_bootstrap-plan.json` with all 4 files classified.
+Expected: Produces `_ingest-plan.json` with all 4 files classified.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add scripts/bootstrap.py
-git commit -m "feat: add bootstrap command for scan, classify, and process pipeline"
+git add scripts/ingest.py
+git commit -m "feat: add ingest command for scan, classify, and process pipeline"
 ```
 
 ---
@@ -805,51 +805,51 @@ git commit -m "feat: add bootstrap command for scan, classify, and process pipel
 - Modify: `docs/WORKFLOW.md`
 - Modify: `scripts/run_all.py`
 
-- [ ] **Step 1: Add bootstrap to README.md**
+- [ ] **Step 1: Add ingest to README.md**
 
 Add to the script table in README.md after verify_tools.py:
 
 ```markdown
-| 0 | `bootstrap.py` | Scan a source folder, classify files, run the full processing pipeline |
+| 0 | `ingest.py` | Scan a source folder, classify files, run the full processing pipeline |
 ```
 
-Add a "Bootstrap (Quick Start)" section after Quick Start:
+Add a "Ingest (Quick Start)" section after Quick Start:
 
 ```markdown
-## Bootstrap (One-Command Processing)
+## Ingest (One-Command Processing)
 
 Process an entire folder of scans/recordings in one go:
 
 ```bash
 # Scan and preview classification
-python scripts/bootstrap.py /path/to/scans --scan
+python scripts/ingest.py /path/to/scans --scan
 
-# Review _bootstrap-plan.json, then execute
-python scripts/bootstrap.py --execute
+# Review _ingest-plan.json, then execute
+python scripts/ingest.py --execute
 
 # Or do it interactively (scan + approve + execute)
-python scripts/bootstrap.py /path/to/scans
+python scripts/ingest.py /path/to/scans
 
 # Merge new files into an existing archive
-python scripts/bootstrap.py /path/to/new-scans --mode merge
+python scripts/ingest.py /path/to/new-scans --mode merge
 ```
 ```
 
-- [ ] **Step 2: Add bootstrap to WORKFLOW.md**
+- [ ] **Step 2: Add ingest to WORKFLOW.md**
 
 Add as Step 0 before "1. Organize Files":
 
 ```markdown
-### 0. Bootstrap (Recommended for New Archives)
+### 0. Ingest (Recommended for New Archives)
 
-If you're starting from scratch with a folder of scans, use bootstrap to do everything at once:
+If you're starting from scratch with a folder of scans, use ingest to do everything at once:
 
 ```bash
-python scripts/bootstrap.py /path/to/source --scan    # classify and preview
-python scripts/bootstrap.py --execute                  # run full pipeline
+python scripts/ingest.py /path/to/source --scan    # classify and preview
+python scripts/ingest.py --execute                  # run full pipeline
 ```
 
-Bootstrap runs all the steps below automatically. You can also run each step individually
+Ingest runs all the steps below automatically. You can also run each step individually
 if you prefer more control.
 ```
 
@@ -857,7 +857,7 @@ if you prefer more control.
 
 ```bash
 git add README.md docs/WORKFLOW.md
-git commit -m "docs: add bootstrap command to README and workflow guide"
+git commit -m "docs: add ingest command to README and workflow guide"
 ```
 
 ---
@@ -867,7 +867,7 @@ git commit -m "docs: add bootstrap command to README and workflow guide"
 - [ ] **Step 1: Verify scan with dry-run**
 
 ```bash
-python scripts/bootstrap.py /path/to/test/folder --scan --dry-run
+python scripts/ingest.py /path/to/test/folder --scan --dry-run
 ```
 
 Expected: Classification summary with file counts by destination.
@@ -875,15 +875,15 @@ Expected: Classification summary with file counts by destination.
 - [ ] **Step 2: Verify scan produces plan**
 
 ```bash
-python scripts/bootstrap.py /path/to/test/folder --scan
+python scripts/ingest.py /path/to/test/folder --scan
 ```
 
-Expected: `_bootstrap-plan.json` written with all files classified.
+Expected: `_ingest-plan.json` written with all files classified.
 
 - [ ] **Step 3: Verify plan structure**
 
 ```bash
-python -c "import json; d=json.load(open('path/to/Organized/_bootstrap-plan.json')); print(json.dumps(d['summary'], indent=2))"
+python -c "import json; d=json.load(open('path/to/Organized/_ingest-plan.json')); print(json.dumps(d['summary'], indent=2))"
 ```
 
 Expected: Valid JSON with total_files, by_type, by_destination counts.
@@ -891,7 +891,7 @@ Expected: Valid JSON with total_files, by_type, by_destination counts.
 - [ ] **Step 4: Verify execute dry-run**
 
 ```bash
-python scripts/bootstrap.py --execute --dry-run
+python scripts/ingest.py --execute --dry-run
 ```
 
 Expected: Shows count of approved files without processing.
@@ -899,7 +899,7 @@ Expected: Shows count of approved files without processing.
 - [ ] **Step 5: Verify merge mode duplicate detection**
 
 ```bash
-python scripts/bootstrap.py /path/to/source --scan --mode merge
+python scripts/ingest.py /path/to/source --scan --mode merge
 ```
 
 Expected: Duplicates flagged with `"approved": false`.

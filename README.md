@@ -24,47 +24,42 @@ family-archive --help
 ## Quick Start
 
 ```bash
-# 1. Verify all tools are installed
-family-archive verify
+# 1. Run the setup wizard (creates config, sets up API keys)
+family-archive init
 
-# 2. Set up configuration
-cp config.example.json config.json
-# Edit config.json with your source and destination paths
-
-# 3. Set up API keys (optional, for AI features)
-cp .env.example .env
-# Edit .env with your API keys (see docs/SETUP-API-KEYS.md)
-
-# 4. Process your archive
-family-archive bootstrap /path/to/your/scans
+# 2. Process your archive
+family-archive ingest /path/to/your/scans
 ```
+
+That's it. The init wizard walks you through configuration interactively.
+For manual setup, see [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 ## Commands
 
-### Bootstrap — Process Everything at Once
+### Ingest — Process Everything at Once
 
 The fastest way to process a folder of scans, recordings, and photos:
 
 ```bash
 # Scan and classify all files, produce a plan for review
-family-archive bootstrap /path/to/scans --scan
+family-archive ingest /path/to/scans --scan
 
-# Review _bootstrap-plan.json (edit classifications if needed)
+# Review _ingest-plan.json (edit classifications if needed)
 
 # Execute the full pipeline (copy, transcribe, format, rename)
-family-archive bootstrap --execute
+family-archive ingest --execute
 
 # Or do it interactively (scan → approve → execute)
-family-archive bootstrap /path/to/scans
+family-archive ingest /path/to/scans
 
 # Merge new files into an existing archive
-family-archive bootstrap /path/to/new-scans --scan --mode merge
+family-archive ingest /path/to/new-scans --scan --mode merge
 
 # Source can be a ZIP file (nested ZIPs are handled too)
-family-archive bootstrap /path/to/archive.zip --scan
+family-archive ingest /path/to/archive.zip --scan
 ```
 
-Bootstrap is fully restartable — if interrupted, run `--execute` again.
+Ingest is fully restartable — if interrupted, run `--execute` again.
 
 ### Individual Steps
 
@@ -129,7 +124,7 @@ PDF transcription uses a **tiered approach** to minimize AI costs:
 2. **Tesseract OCR** (free, slower) — Scanned/image PDFs are OCR'd locally
 3. **Gemini AI vision** (paid, best quality) — Only used for files where steps 1-2 produced low-confidence results (typically handwritten documents)
 
-The bootstrap pipeline runs all three tiers automatically. When running manually:
+The ingest pipeline runs all three tiers automatically. When running manually:
 
 ```bash
 python scripts/transcribe_pdfs.py                    # free: tiers 1 + 2
