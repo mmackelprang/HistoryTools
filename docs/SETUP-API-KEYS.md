@@ -76,7 +76,36 @@ Whisper is free but slower, requires more RAM, and doesn't identify speakers.
 
 ---
 
-### 3. Anthropic Claude -- Transcript Formatting
+### 3. OpenAI API -- Alternative for PDF Transcription and Formatting
+
+**What it does**: GPT-4o provides vision capabilities for PDF transcription (alternative
+to Gemini) and text generation for formatting (alternative to Claude). Whisper API
+provides audio transcription (alternative to AssemblyAI, but without speaker diarization).
+
+**Recommended models**:
+
+| Model | Input (per 1M tokens) | Output (per 1M tokens) | Best for |
+|-------|----------------------|------------------------|----------|
+| **gpt-4o-mini** | ~$0.15 | ~$0.60 | Default. Fast, cheap, good quality |
+| gpt-4o | ~$2.50 | ~$10.00 | Highest quality vision and text |
+| gpt-4.1-mini | ~$0.40 | ~$1.60 | Newer mini model, better reasoning |
+| gpt-4.1 | ~$2.00 | ~$8.00 | Newer full model |
+
+**Whisper API**: $0.006/minute (no speaker diarization)
+
+**To use OpenAI instead of Gemini**: `family-archive transcribe --vendor openai`
+**To use OpenAI instead of Claude**: `family-archive format --vendor openai`
+
+#### Setup:
+
+1. Go to [OpenAI Platform](https://platform.openai.com/api-keys)
+2. Create an account and add payment method
+3. Create an API key
+4. Copy the key
+
+---
+
+### 4. Anthropic Claude -- Transcript Formatting
 
 **What it does**: Adds summaries, markdown headers, topic sections, and clean formatting
 to raw transcripts. Makes transcripts readable and searchable.
@@ -111,6 +140,9 @@ Edit `.env` with your keys:
 # Required for: PDF transcription (handwriting), rename proposals, date detection
 GEMINI_API_KEY=your-gemini-key-here
 
+# Optional: Alternative to Gemini for PDF transcription, and to Claude for formatting
+OPENAI_API_KEY=your-openai-key-here
+
 # Required for: Audio transcription with speaker identification
 ASSEMBLYAI_API_KEY=your-assemblyai-key-here
 
@@ -118,15 +150,16 @@ ASSEMBLYAI_API_KEY=your-assemblyai-key-here
 ANTHROPIC_API_KEY=your-anthropic-key-here
 ```
 
-You don't need all three -- only set up the services you want to use:
+You don't need all four -- only set up the services you want to use:
 
 | If you only want... | You need... |
 |---------------------|-------------|
-| PDF handwriting transcription | Gemini |
+| PDF handwriting transcription | Gemini or OpenAI |
 | Audio transcription | AssemblyAI (or use free Whisper) |
-| Transcript formatting | Anthropic |
-| Rename proposals + date detection | Gemini |
-| Everything | All three |
+| Transcript formatting | Anthropic or OpenAI |
+| Rename proposals + date detection | Gemini or OpenAI |
+| Everything (one vendor) | Gemini + AssemblyAI + Anthropic |
+| Everything (OpenAI alternative) | OpenAI + AssemblyAI |
 
 ### Verify:
 
@@ -183,18 +216,18 @@ for single-speaker recordings or when you don't need speaker identification.
 
 ## Swapping AI Vendors
 
-Each AI step supports model override via CLI flags:
+Each AI step supports model override via CLI flags, and vendor swapping via `--vendor`:
 
-| Step | Default vendor/model | Override flag |
-|------|---------------------|---------------|
-| PDF transcription | Gemini 2.5 Flash | `--model gemini-2.5-pro` |
-| Audio transcription | AssemblyAI universal-3-pro | Use Whisper: `python scripts/transcribe_audio.py` |
-| Formatting | Claude Haiku 4.5 | `--model claude-sonnet-4-20250514` |
-| Rename proposals | Gemini 2.5 Flash | `--model gemini-2.5-pro` |
-| Date detection | Gemini 2.5 Flash | `--model gemini-2.5-pro` |
+| Step | Default vendor/model | Override model | Swap vendor |
+|------|---------------------|----------------|-------------|
+| PDF transcription | Gemini 2.5 Flash | `--model gemini-2.5-pro` | `--vendor openai` |
+| Audio transcription | AssemblyAI universal-3-pro | Use Whisper: `python scripts/transcribe_audio.py` | -- |
+| Formatting | Claude Haiku 4.5 | `--model claude-sonnet-4-20250514` | `--vendor openai` |
+| Rename proposals | Gemini 2.5 Flash | `--model gemini-2.5-pro` | `--vendor openai` |
+| Date detection | Gemini 2.5 Flash | `--model gemini-2.5-pro` | `--vendor openai` |
 
-**Full vendor swapping** (e.g., using OpenAI instead of Gemini, or Gemini instead of Claude)
-is planned for a future release via the config system. The prompts are vendor-agnostic --
+The `--vendor` flag is supported by the unified AI client (`ai_client.py`). Vendor
+swapping is being rolled out across all scripts. The prompts are vendor-agnostic --
 only the API client code is vendor-specific.
 
 ---
@@ -204,5 +237,6 @@ only the API client code is vendor-specific.
 - **Never commit `.env` to version control.** It's in `.gitignore` by default.
 - If you accidentally expose a key, revoke it immediately:
   - Gemini: [Google AI Studio](https://aistudio.google.com/apikey)
+  - OpenAI: [Platform](https://platform.openai.com/api-keys)
   - AssemblyAI: [Dashboard](https://www.assemblyai.com/app/account)
   - Anthropic: [Console](https://console.anthropic.com)

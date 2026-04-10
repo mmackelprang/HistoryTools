@@ -140,16 +140,17 @@ family-archive transcribe --low-confidence-only       # paid: tier 3 for low-con
 
 These features require API keys (see [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEYS.md)):
 
-| Command | Service | What It Does | Estimated Cost |
-|---------|---------|-------------|---------------|
-| `family-archive transcribe` | Google Gemini | AI vision for handwriting OCR | ~$0.50-1.00 per 1000 pages |
-| `family-archive transcribe --low-confidence-only` | Google Gemini | AI only for low-confidence files | Much less (only handwriting) |
-| `family-archive transcribe-audio` | AssemblyAI | Speaker-diarized audio transcription | ~$0.01/minute |
-| `family-archive format` | Anthropic Claude | Markdown formatting + summaries | ~$0.10-0.20 per 500 files |
-| `family-archive rename` | Google Gemini | AI-suggested filenames | ~$0.10-0.30 per 500 files |
-| `family-archive detect-dates` | Google Gemini | Date detection in undated files | ~$0.05-0.10 per 200 files |
+| Command | Default Service | Alternatives | What It Does | Estimated Cost |
+|---------|----------------|-------------|-------------|---------------|
+| `family-archive transcribe` | Google Gemini | OpenAI GPT-4o | AI vision for handwriting OCR | ~$0.50-1.00 per 1000 pages |
+| `family-archive transcribe --low-confidence-only` | Google Gemini | OpenAI GPT-4o | AI only for low-confidence files | Much less (only handwriting) |
+| `family-archive transcribe-audio` | AssemblyAI | -- | Speaker-diarized audio transcription | ~$0.01/minute |
+| `family-archive format` | Anthropic Claude | OpenAI GPT-4o | Markdown formatting + summaries | ~$0.10-0.20 per 500 files |
+| `family-archive rename` | Google Gemini | OpenAI GPT-4o | AI-suggested filenames | ~$0.10-0.30 per 500 files |
+| `family-archive detect-dates` | Google Gemini | OpenAI GPT-4o | Date detection in undated files | ~$0.05-0.10 per 200 files |
 
 All AI features are optional. Without API keys, local tools (Tesseract OCR, Whisper) are used instead.
+Vendor swapping via `--vendor openai` is supported through the unified AI client (`ai_client.py`).
 
 ## Modes
 
@@ -224,6 +225,7 @@ Installed automatically via `pip install -e ".[all]"`:
 | Pillow | Image processing |
 | python-dotenv | Load API keys from .env |
 | google-genai | Gemini AI for handwriting OCR |
+| openai | OpenAI API (alternative to Gemini/Claude) |
 | assemblyai | Audio transcription with speaker ID |
 | anthropic | Transcript formatting with Claude |
 | openai-whisper | Local audio transcription |
