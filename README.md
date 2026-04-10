@@ -116,6 +116,48 @@ Edit `config.json` (copy from `config.example.json`):
 }
 ```
 
+## Taxonomy (File Classification Rules)
+
+Classification rules -- file types, folder keywords, and processing pipelines -- are defined in `taxonomy.json`. This file ships with sensible defaults and can be customized without editing code.
+
+**What it controls:**
+
+- **File types** -- which extensions map to which category (document, audio, photo, etc.) and where specific types are routed (e.g., spreadsheets to NeedsReview, email to _imports/)
+- **Folders** -- which keywords in folder names or filenames trigger classification into specific destination folders
+- **Processing pipelines** -- which processing steps (transcribe, format, rename, etc.) apply to each file type
+
+**Customizing:**
+
+To add a new file extension (e.g., `.webp` as a photo type):
+```json
+"photo": {
+  "extensions": [".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".heic", ".webp"],
+  "route_to": "Media/Photos"
+}
+```
+
+To add a new folder classification (e.g., military records):
+```json
+"Military/Service": {
+  "keywords": ["military", "army", "navy", "veteran"],
+  "filename_keywords": ["enlistment", "discharge"],
+  "description": "Military service records"
+}
+```
+
+To customize a processing pipeline:
+```json
+"processing_pipelines": {
+  "document": ["copy", "transcribe", "format", "rename", "detect_date"],
+  "audio": ["copy", "transcribe_audio", "format", "rename"],
+  "photo": ["copy", "catalog_photos"],
+  "video": ["copy"],
+  "default": ["copy"]
+}
+```
+
+If `taxonomy.json` is missing, built-in defaults are used automatically -- the system works identically to before. See `taxonomy.example.json` for a fully commented reference.
+
 ## File Naming Convention
 
 All files are renamed to: `YYYY-MM-DD_descriptive-slug.ext`

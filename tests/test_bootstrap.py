@@ -21,6 +21,7 @@ from bootstrap import (
     classify_file,
     classify_by_folder_hints,
     classify_by_filename,
+    classify_by_type_default,
     parse_date_from_filename,
     make_slug,
     _safe_file_size,
@@ -788,3 +789,207 @@ class TestScanSource:
         assert by_type.get("document", 0) == 1
         assert by_type.get("photo", 0) == 1
         assert by_type.get("audio", 0) == 1
+
+
+# ── Taxonomy-driven tests ───────────────────────────────────────────────────────
+
+import copy
+
+SCRIPTS_DIR_FOR_CONFIG = Path(__file__).resolve().parent.parent / "scripts"
+if str(SCRIPTS_DIR_FOR_CONFIG) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR_FOR_CONFIG))
+
+from config import DEFAULT_TAXONOMY, load_taxonomy
+
+
+class TestCustomFileTypeExtension:
+    """Test that adding a new extension via taxonomy works."""
+
+    def test_custom_extension_recognized(self):
+        """A .webp extension added to photo type is recognized."""
+        tax = copy.deepcopy(DEFAULT_TAXONOMY)
+        tax["file_types"]["photo"]["extensions"].append(".webp")
+        assert get_file_type(".webp", tax) == "photo"
+
+    def test_custom_extension_not_in_defaults(self):
+        """.webp is unknown in the default taxonomy."""
+        assert get_file_type(".webp") == "unknown"
+
+    def test_custom_new_type_category(self):
+        """A wholly new file type category can be added."""
+        tax = copy.deepcopy(DEFAULT_TAXONOMY)
+        tax["file_types"]["cad"] = {
+            "extensions": [".dwg", ".dxf"],
+            "route_to": "Engineering/CAD",
+        }
+        assert get_file_type(".dwg", tax) == "cad"
+        assert get_file_type(".dxf", tax) == "cad"
+
+    def test_custom_type_route_to_used_in_classify(self, tmp_path):
+        """A custom type with route_to is used by classify_by_type_default."""
+        tax = copy.deepcopy(DEFAULT_TAXONOMY)
+        tax["file_types"]["cad"] = {
+            "extensions": [".dwg"],
+            "route_to": "Engineering/CAD",
+        }
+        dest, source = classify_by_type_default("cad", tax)
+        assert dest == "Engineering/CAD"
+        assert source == "type_default"
+
+
+class TestCustomFolderKeyword:
+    """Test that adding a new folder keyword via taxonomy works."""
+
+    def test_custom_folder_hint_keyword(self, tmp_path):
+        """A custom keyword maps to a custom folder via folder hints."""
+        tax = copy.deepcopy(DEFAULT_TAXONOMY)
+        tax["folders"]["Military/Service"] = {
+            "keywords": ["military", "army", "navy"],
+            "description": "Military service records",
+        }
+        source_root = tmp_path / "source"
+        folder = source_root / "Military Records"
+        folder.mkdir(parents=True)
+        f = folder / "discharge.pdf"
+
+        dest, source = classify_by_folder_hints(f, source_root, tax)
+        assert dest == "Military/Service"
+        assert source == "folder_hint"
+
+    def test_custom_filename_keyword(self):
+        """A custom filename_keyword maps to a custom folder."""
+        tax = copy.deepcopy(DEFAULT_TAXONOMY)
+        tax["folders"]["Military/Service"] = {
+            "keywords": ["military"],
+            "filename_keywords": ["enlistment"],
+            "description": "Military service records",
+        }
+        dest, source = classify_by_filename("enlistment_papers.pdf", tax)
+        assert dest == "Military/Service"
+        assert source == "filename_pattern"
+
+    def test_custom_keyword_does_not_affect_defaults(self, tmp_path):
+        """Default keywords still work after adding custom ones."""
+        tax = copy.deepcopy(DEFAULT_TAXONOMY)
+        tax["folders"]["Custom/Folder"] = {
+            "keywords": ["custom"],
+            "description": "Custom folder",
+        }
+        source_root = tmp_path / "source"
+        folder = source_root / "Letters"
+        folder.mkdir(parents=True)
+        f = folder / "note.pdf"
+
+        dest, source = classify_by_folder_hints(f, source_root, tax)
+        assert dest == "Correspondence/Letters"
+
+
+class TestCustomProcessingPipeline:
+    """Test that custom processing pipelines via taxonomy work."""
+
+    def test_custom_pipeline_for_document(self):
+        """A modified document pipeline is used."""
+        tax = copy.deepcopy(DEFAULT_TAXONOMY)
+        tax["processing_pipelines"]["document"] = ["copy", "transcribe", "rename"]
+        pipeline = get_processing_pipeline("document", "Correspondence/Letters", tax)
+        assert pipeline == ["copy", "transcribe", "rename"]
+
+    def test_custom_pipeline_for_new_type(self):
+        """A pipeline for a new type category is used."""
+        tax = copy.deepcopy(DEFAULT_TAXONOMY)
+        tax["processing_pipelines"]["cad"] = ["copy", "convert_to_pdf"]
+        pipeline = get_processing_pipeline("cad", "Engineering/CAD", tax)
+        assert pipeline == ["copy", "convert_to_pdf"]
+
+    def test_custom_pipeline_does_not_affect_needs_review(self):
+        """Files in NeedsReview still get copy-only even with custom pipelines."""
+        tax = copy.deepcopy(DEFAULT_TAXONOMY)
+        tax["processing_pipelines"]["document"] = ["copy", "transcribe", "rename"]
+        pipeline = get_processing_pipeline("document", "NeedsReview", tax)
+        assert pipeline == ["copy"]
+
+    def test_default_pipeline_used_for_unknown_type(self):
+        """The 'default' pipeline is used for unrecognized types."""
+        tax = copy.deepcopy(DEFAULT_TAXONOMY)
+        pipeline = get_processing_pipeline("some_new_type", "SomeFolder", tax)
+        assert pipeline == ["copy"]
+
+
+class TestTaxonomyFallsBackToDefaults:
+    """Test that the system works without a taxonomy.json file."""
+
+    def test_load_taxonomy_returns_defaults_for_missing_file(self, tmp_path):
+        """load_taxonomy returns DEFAULT_TAXONOMY when file doesn't exist."""
+        nonexistent = tmp_path / "does_not_exist.json"
+        tax = load_taxonomy(str(nonexistent))
+        assert tax["version"] == 1
+        assert "file_types" in tax
+        assert "folders" in tax
+        assert "processing_pipelines" in tax
+
+    def test_default_taxonomy_matches_original_file_types(self):
+        """DEFAULT_TAXONOMY has all the original file type mappings."""
+        tax = DEFAULT_TAXONOMY
+        assert get_file_type(".pdf", tax) == "document"
+        assert get_file_type(".mp3", tax) == "audio"
+        assert get_file_type(".jpg", tax) == "photo"
+        assert get_file_type(".mp4", tax) == "video"
+        assert get_file_type(".xlsx", tax) == "spreadsheet"
+        assert get_file_type(".eml", tax) == "email"
+        assert get_file_type(".gedcom", tax) == "genealogy"
+        assert get_file_type(".xyz", tax) == "unknown"
+
+    def test_default_taxonomy_folder_hints_match_original(self, tmp_path):
+        """DEFAULT_TAXONOMY folder hints produce the same results as the original code."""
+        tax = DEFAULT_TAXONOMY
+        source_root = tmp_path / "source"
+
+        test_cases = [
+            ("Letters", "Correspondence/Letters"),
+            ("Cards", "Correspondence/Cards"),
+            ("Journals", "Journals"),
+            ("tax returns", "Financial/Taxes"),
+            ("Medical Records", "Medical"),
+            ("cassette tapes", "Media/Audio/CassetteTapes"),
+        ]
+        for folder_name, expected_dest in test_cases:
+            folder = source_root / folder_name
+            folder.mkdir(parents=True, exist_ok=True)
+            f = folder / "file.pdf"
+            dest, _ = classify_by_folder_hints(f, source_root, tax)
+            assert dest == expected_dest, f"Folder '{folder_name}' expected '{expected_dest}', got '{dest}'"
+
+    def test_default_taxonomy_filename_patterns_match_original(self):
+        """DEFAULT_TAXONOMY filename patterns produce the same results as the original code."""
+        tax = DEFAULT_TAXONOMY
+        test_cases = [
+            ("personal_letter_1985.pdf", "Correspondence/Letters"),
+            ("postcard_from_paris.pdf", "Correspondence/Cards"),
+            ("my_journal_2020.pdf", "Journals"),
+            ("grandma_obituary.pdf", "Memories"),
+            ("family_recipe.pdf", "Documents/Recipes"),
+        ]
+        for filename, expected_dest in test_cases:
+            dest, _ = classify_by_filename(filename, tax)
+            assert dest == expected_dest, f"Filename '{filename}' expected '{expected_dest}', got '{dest}'"
+
+    def test_default_taxonomy_pipelines_match_original(self):
+        """DEFAULT_TAXONOMY pipelines produce the same results as the original code."""
+        tax = DEFAULT_TAXONOMY
+        assert get_processing_pipeline("document", "Correspondence/Letters", tax) == \
+            ["copy", "transcribe", "format", "rename", "detect_date"]
+        assert get_processing_pipeline("audio", "Media/Audio/FamilyRecordings", tax) == \
+            ["copy", "transcribe_audio", "format", "rename"]
+        assert get_processing_pipeline("photo", "Media/Photos", tax) == \
+            ["copy", "catalog_photos"]
+        assert get_processing_pipeline("video", "Media/Video", tax) == ["copy"]
+        assert get_processing_pipeline("document", "NeedsReview", tax) == ["copy"]
+
+    def test_functions_work_without_taxonomy_parameter(self):
+        """All functions work when taxonomy parameter is omitted (uses DEFAULT_TAXONOMY)."""
+        assert get_file_type(".pdf") == "document"
+        assert classify_by_filename("letter.pdf") == ("Correspondence/Letters", "filename_pattern")
+        dest, src = classify_by_type_default("audio")
+        assert dest == "Media/Audio/FamilyRecordings"
+        pipeline = get_processing_pipeline("document", "Journals")
+        assert "transcribe" in pipeline

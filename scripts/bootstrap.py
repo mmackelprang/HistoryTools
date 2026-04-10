@@ -37,129 +37,63 @@ from pathlib import Path
 from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent))
-from config import load_config
+from config import load_config, load_taxonomy, DEFAULT_TAXONOMY
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 SCRIPTS_DIR = Path(__file__).parent
 
-# ── File type classification ────────────────────────────────────────────────
+# ── File type classification (taxonomy-driven) ────────────────────────────────
 
-AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".wma"}
-VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".wmv"}
-PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".heic"}
-DOCUMENT_EXTS = {".pdf", ".doc", ".docx", ".txt", ".rtf"}
-SPREADSHEET_EXTS = {".xls", ".xlsx", ".csv"}
-EMAIL_EXTS = {".eml", ".mbox", ".pst"}
-GENEALOGY_EXTS = {".gedcom", ".ged"}
 
-def get_file_type(ext):
-    """Classify a file by its extension."""
+def _build_ext_map(taxonomy):
+    """Build extension → type-name lookup from taxonomy file_types."""
+    ext_map = {}
+    for type_name, info in taxonomy["file_types"].items():
+        for ext in info["extensions"]:
+            ext_map[ext.lower()] = type_name
+    return ext_map
+
+
+def get_file_type(ext, taxonomy=None, _cache={}):
+    """Classify a file by its extension. Caches the ext_map per taxonomy id."""
+    if taxonomy is None:
+        taxonomy = DEFAULT_TAXONOMY
     ext = ext.lower()
-    if ext in AUDIO_EXTS:
-        return "audio"
-    if ext in VIDEO_EXTS:
-        return "video"
-    if ext in PHOTO_EXTS:
-        return "photo"
-    if ext in DOCUMENT_EXTS:
-        return "document"
-    if ext in SPREADSHEET_EXTS:
-        return "spreadsheet"
-    if ext in EMAIL_EXTS:
-        return "email"
-    if ext in GENEALOGY_EXTS:
-        return "genealogy"
-    return "unknown"
+    cache_key = id(taxonomy)
+    if cache_key not in _cache:
+        _cache[cache_key] = _build_ext_map(taxonomy)
+    return _cache[cache_key].get(ext, "unknown")
 
 
-# ── Folder hint classification ──────────────────────────────────────────────
-
-# Map of lowercase keywords → destination folder
-# These are checked against source folder names to boost classification
-FOLDER_HINTS = {
-    # Correspondence
-    "letter": "Correspondence/Letters",
-    "letters": "Correspondence/Letters",
-    "card": "Correspondence/Cards",
-    "cards": "Correspondence/Cards",
-    "postcard": "Correspondence/Cards",
-    "correspondence": "Correspondence/Letters",
-    # Journals
-    "journal": "Journals",
-    "journals": "Journals",
-    "diary": "Journals",
-    "diaries": "Journals",
-    # Documents
-    "church": "Documents/Church",
-    "religious": "Documents/Church",
-    "school": "Documents/Education",
-    "education": "Documents/Education",
-    "homework": "Documents/Education",
-    "legal": "Documents/Legal",
-    "certificate": "Documents/Legal",
-    "employment": "Documents/Employment",
-    "work": "Documents/Employment",
-    "writing": "Documents/Writings",
-    "writings": "Documents/Writings",
-    "essay": "Documents/Writings",
-    "recipe": "Documents/Recipes",
-    "recipes": "Documents/Recipes",
-    "cookbook": "Documents/Recipes",
-    # Financial
-    "financial": "Financial",
-    "finance": "Financial",
-    "tax": "Financial/Taxes",
-    "taxes": "Financial/Taxes",
-    "insurance": "Financial/Insurance",
-    "bill": "Financial/BillsAndReceipts",
-    "bills": "Financial/BillsAndReceipts",
-    "receipt": "Financial/BillsAndReceipts",
-    "receipts": "Financial/BillsAndReceipts",
-    # Medical
-    "medical": "Medical",
-    "dental": "Medical/Dental",
-    "health": "Medical",
-    # Media
-    "photo": "Media/Photos",
-    "photos": "Media/Photos",
-    "picture": "Media/Photos",
-    "pictures": "Media/Photos",
-    "audio": "Media/Audio/FamilyRecordings",
-    "recording": "Media/Audio/FamilyRecordings",
-    "recordings": "Media/Audio/FamilyRecordings",
-    "tape": "Media/Audio/CassetteTapes",
-    "tapes": "Media/Audio/CassetteTapes",
-    "cassette": "Media/Audio/CassetteTapes",
-    "music": "Media/Audio/Songs",
-    "song": "Media/Audio/Songs",
-    "songs": "Media/Audio/Songs",
-    "video": "Media/Video",
-    "videos": "Media/Video",
-    "movie": "Media/Video",
-    "movies": "Media/Video",
-    # Other
-    "memory": "Memories",
-    "memories": "Memories",
-    "memorial": "Memories",
-    "obituary": "Memories",
-}
-
-# Filename pattern keywords → destination folder
-FILENAME_PATTERNS = {
-    "letter": "Correspondence/Letters",
-    "postcard": "Correspondence/Cards",
-    "card": "Correspondence/Cards",
-    "journal": "Journals",
-    "diary": "Journals",
-    "obituary": "Memories",
-    "eulogy": "Memories",
-    "memoir": "Memories",
-    "recipe": "Documents/Recipes",
-}
+# ── Folder hint classification (taxonomy-driven) ──────────────────────────────
 
 
-def classify_by_folder_hints(source_path, source_root):
+def _build_folder_hints(taxonomy):
+    """Build keyword → dest_folder lookup from taxonomy folders.
+    Keywords are lowercased to ensure case-insensitive matching."""
+    hints = {}
+    for dest_folder, info in taxonomy["folders"].items():
+        for keyword in info.get("keywords", []):
+            hints[keyword.lower()] = dest_folder
+    return hints
+
+
+def _build_filename_patterns(taxonomy):
+    """Build keyword → dest_folder lookup from taxonomy folders (filename_keywords).
+    Keywords are lowercased to ensure case-insensitive matching."""
+    patterns = {}
+    for dest_folder, info in taxonomy["folders"].items():
+        for keyword in info.get("filename_keywords", []):
+            patterns[keyword.lower()] = dest_folder
+    return patterns
+
+
+def classify_by_folder_hints(source_path, source_root, taxonomy=None):
     """Use source folder names to suggest classification."""
+    if taxonomy is None:
+        taxonomy = DEFAULT_TAXONOMY
+    folder_hints = _build_folder_hints(taxonomy)
+
     try:
         rel = source_path.relative_to(source_root)
     except ValueError:
@@ -168,44 +102,50 @@ def classify_by_folder_hints(source_path, source_root):
     # Check each folder component for hints
     for part in rel.parts[:-1]:  # exclude the filename
         part_lower = part.lower()
-        for keyword, dest_folder in FOLDER_HINTS.items():
+        for keyword, dest_folder in folder_hints.items():
             if keyword in part_lower:
                 return dest_folder, "folder_hint"
 
     return None, "none"
 
 
-def classify_by_filename(filename):
+def classify_by_filename(filename, taxonomy=None):
     """Use filename patterns to suggest classification."""
+    if taxonomy is None:
+        taxonomy = DEFAULT_TAXONOMY
+    filename_patterns = _build_filename_patterns(taxonomy)
+
     stem_lower = Path(filename).stem.lower().replace("-", " ").replace("_", " ")
-    for keyword, dest_folder in FILENAME_PATTERNS.items():
+    for keyword, dest_folder in filename_patterns.items():
         if keyword in stem_lower:
             return dest_folder, "filename_pattern"
     return None, "none"
 
 
-def classify_by_type_default(file_type):
+def classify_by_type_default(file_type, taxonomy=None):
     """Default classification based on file type alone."""
-    defaults = {
-        "audio": "Media/Audio/FamilyRecordings",
-        "video": "Media/Video",
-        "photo": "Media/Photos",
-        "document": None,  # documents need more context
-        "email": "_imports/EmailArchives",
-        "genealogy": "_imports",
-        "spreadsheet": "NeedsReview",
-        "unknown": "Unprocessed",
-    }
+    if taxonomy is None:
+        taxonomy = DEFAULT_TAXONOMY
+
+    # Build defaults from taxonomy file_types route_to
+    defaults = {"unknown": "Unprocessed"}
+    for type_name, info in taxonomy["file_types"].items():
+        route = info.get("route_to")
+        if route:
+            defaults[type_name] = route
+
     dest = defaults.get(file_type)
     if dest:
         return dest, "type_default"
     return None, "none"
 
 
-def classify_file(source_path, source_root):
+def classify_file(source_path, source_root, taxonomy=None):
     """Classify a file using all available signals. Returns (dest_folder, classification_source, confidence)."""
+    if taxonomy is None:
+        taxonomy = DEFAULT_TAXONOMY
     ext = source_path.suffix.lower()
-    file_type = get_file_type(ext)
+    file_type = get_file_type(ext, taxonomy)
 
     # Spreadsheets always go to NeedsReview
     if file_type == "spreadsheet":
@@ -217,21 +157,21 @@ def classify_file(source_path, source_root):
 
     # Email and genealogy go to imports
     if file_type in ("email", "genealogy"):
-        dest, source = classify_by_type_default(file_type)
+        dest, source = classify_by_type_default(file_type, taxonomy)
         return dest, source, "high"
 
     # Try folder hints first (strongest signal)
-    dest, source = classify_by_folder_hints(source_path, source_root)
+    dest, source = classify_by_folder_hints(source_path, source_root, taxonomy)
     if dest:
         return dest, source, "high"
 
     # Try filename patterns
-    dest, source = classify_by_filename(source_path.name)
+    dest, source = classify_by_filename(source_path.name, taxonomy)
     if dest:
         return dest, source, "medium"
 
     # Fall back to type defaults
-    dest, source = classify_by_type_default(file_type)
+    dest, source = classify_by_type_default(file_type, taxonomy)
     if dest:
         return dest, source, "medium"
 
@@ -324,19 +264,24 @@ def md5_hash(filepath, chunk_size=8192):
 
 # ── Processing pipeline mapping ─────────────────────────────────────────────
 
-def get_processing_pipeline(file_type, dest_folder):
+def get_processing_pipeline(file_type, dest_folder, taxonomy=None):
     """Determine which processing steps apply to this file."""
-    pipeline = ["copy"]
+    if taxonomy is None:
+        taxonomy = DEFAULT_TAXONOMY
+    pipelines = taxonomy.get("processing_pipelines", {})
 
-    if file_type == "document" and dest_folder not in ("NeedsReview", "Unprocessed"):
-        pipeline.extend(["transcribe", "format", "rename", "detect_date"])
-    elif file_type == "audio" and dest_folder not in ("NeedsReview", "Unprocessed"):
-        pipeline.extend(["transcribe_audio", "format", "rename"])
-    elif file_type == "photo":
-        pipeline.append("catalog_photos")
-    # video, email, genealogy, spreadsheet, unknown: just copy
+    # Files in NeedsReview or Unprocessed only get copied (except photos which
+    # always get cataloged regardless of destination)
+    if file_type == "photo":
+        return list(pipelines.get("photo", ["copy", "catalog_photos"]))
 
-    return pipeline
+    if dest_folder in ("NeedsReview", "Unprocessed"):
+        return ["copy"]
+
+    if file_type in pipelines:
+        return list(pipelines[file_type])
+
+    return list(pipelines.get("default", ["copy"]))
 
 
 # ── ZIP handling ────────────────────────────────────────────────────────────
@@ -450,8 +395,10 @@ def prepare_source(source_path):
 
 # ── Scan phase ──────────────────────────────────────────────────────────────
 
-def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts):
+def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts, taxonomy=None):
     """Scan source directory and classify all files. Returns plan dict."""
+    if taxonomy is None:
+        taxonomy = DEFAULT_TAXONOMY
     source_root = Path(source_root)
     dest_root = Path(dest_root)
 
@@ -489,8 +436,8 @@ def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts):
             if ext == ".zip":
                 continue
 
-            file_type = get_file_type(ext)
-            dest_folder, class_source, confidence = classify_file(filepath, source_root)
+            file_type = get_file_type(ext, taxonomy)
+            dest_folder, class_source, confidence = classify_file(filepath, source_root, taxonomy)
             date_prefix = parse_date_from_filename(filename)
             slug = make_slug(filename)
             proposed_name = f"{date_prefix}_{slug}{ext}" if slug else f"{date_prefix}{ext}"
@@ -502,7 +449,7 @@ def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts):
             elif dest_folder not in ("NeedsReview", "Unprocessed", "_imports/EmailArchives", "_imports/SMSExports", "_imports"):
                 dest_subfolder = "Undated"
 
-            processing = get_processing_pipeline(file_type, dest_folder)
+            processing = get_processing_pipeline(file_type, dest_folder, taxonomy)
 
             # Check for duplicates in merge mode
             is_duplicate = False
@@ -775,10 +722,14 @@ def main():
     parser.add_argument("--mode", default="standalone", choices=["standalone", "merge"],
                         help="standalone (new archive) or merge (add to existing)")
     parser.add_argument("--config", default=None, help="Path to config.json")
+    parser.add_argument("--taxonomy", default=None, help="Path to taxonomy.json")
     parser.add_argument("--skip-transcribe", action="store_true", help="Skip transcription stages")
     parser.add_argument("--skip-format", action="store_true", help="Skip formatting stage")
     parser.add_argument("--dry-run", action="store_true", help="Preview without changes")
     args = parser.parse_args()
+
+    # Load taxonomy for classification rules
+    taxonomy = load_taxonomy(args.taxonomy)
 
     # Load config for dest_root and exclusions
     try:
@@ -838,7 +789,7 @@ def main():
 
     try:
         print(f"Scanning {source_root}...")
-        plan = scan_source(source_root, dest_root, args.mode, exclude_dirs, exclude_exts)
+        plan = scan_source(source_root, dest_root, args.mode, exclude_dirs, exclude_exts, taxonomy)
 
         # Record if source required extraction (for the plan metadata)
         if temp_dir:
