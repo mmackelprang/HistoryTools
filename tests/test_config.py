@@ -179,3 +179,19 @@ class TestLoadConfig:
         })
         config = load_config(cfg_path)
         assert config["my_custom_key"] == "my_value"
+
+
+class TestFindTesseract:
+    """Tests for find_tesseract() auto-detection."""
+
+    def test_returns_string(self):
+        from config import find_tesseract
+        result = find_tesseract()
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_returns_executable_path_or_command_name(self):
+        from config import find_tesseract
+        result = find_tesseract()
+        # Should be either "tesseract" (on PATH) or a full path
+        assert result == "tesseract" or Path(result).name.startswith("tesseract")
