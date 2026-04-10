@@ -89,7 +89,7 @@ ANTHROPIC_API_KEY=your-anthropic-key-here
 ### Verify:
 
 ```bash
-python scripts/verify_tools.py
+family-archive verify
 ```
 
 ---

@@ -4,9 +4,10 @@ This guide walks through the recommended order for processing a family archive.
 
 ## Prerequisites
 
-1. Install all tools: `python scripts/verify_tools.py`
-2. Configure paths: edit `config.json`
-3. Set up API keys (optional): see [SETUP-API-KEYS.md](SETUP-API-KEYS.md)
+1. Install: `pip install -e ".[all]"`
+2. Verify tools: `family-archive verify`
+3. Configure paths: edit `config.json`
+4. Set up API keys (optional): see [SETUP-API-KEYS.md](SETUP-API-KEYS.md)
 
 ## Step-by-Step
 
@@ -15,8 +16,8 @@ This guide walks through the recommended order for processing a family archive.
 If you're starting from scratch with a folder of scans, use bootstrap to do everything at once:
 
 ```bash
-python scripts/bootstrap.py /path/to/source --scan    # classify and preview
-python scripts/bootstrap.py --execute                  # run full pipeline
+family-archive bootstrap /path/to/source --scan    # classify and preview
+family-archive bootstrap --execute                  # run full pipeline
 ```
 
 Bootstrap runs all the steps below automatically. You can also run each step individually
@@ -26,10 +27,10 @@ if you prefer more control.
 
 ```bash
 # Preview classification
-python scripts/organize.py --dry-run
+family-archive organize --dry-run
 
 # Run organization
-python scripts/organize.py
+family-archive organize
 ```
 
 Files are classified by filename patterns and file type, renamed with date prefixes,
@@ -37,40 +38,40 @@ and copied to the appropriate folders.
 
 ### 2. Transcribe PDFs
 
-**Option A: Local OCR (free, works for printed text)**
+**Option A: Gemini AI Vision (paid, excellent for handwriting)**
+```bash
+family-archive transcribe --dry-run     # preview + cost estimate
+family-archive transcribe               # run
+```
+
+**Option B: Local OCR (free, works for printed text)**
 ```bash
 python scripts/transcribe_pdfs.py
 ```
 
-**Option B: Gemini AI Vision (paid, excellent for handwriting)**
-```bash
-python scripts/transcribe_pdfs_gemini.py --dry-run  # preview + cost estimate
-python scripts/transcribe_pdfs_gemini.py             # run
-```
-
 ### 3. Transcribe Audio
 
-**Option A: Local Whisper (free, CPU-intensive)**
+**Option A: AssemblyAI (paid, speaker diarization)**
+```bash
+family-archive transcribe-audio --dry-run   # preview + cost
+family-archive transcribe-audio             # run
+```
+
+**Option B: Local Whisper (free, CPU-intensive)**
 ```bash
 python scripts/transcribe_audio.py
 ```
 
-**Option B: AssemblyAI (paid, speaker diarization)**
-```bash
-python scripts/transcribe_audio_assemblyai.py --dry-run  # preview + cost
-python scripts/transcribe_audio_assemblyai.py             # run
-```
-
 ### 4. Label Speakers (audio only)
 
-After AssemblyAI transcription, assign real names to speakers:
+After audio transcription, assign real names to speakers:
 
 ```bash
 # Interactive mode — shows samples, prompts for names
-python scripts/label_speakers.py path/to/transcript.md
+family-archive speakers path/to/transcript.md
 
 # Batch mode
-python scripts/label_speakers.py --dir AudioRecordings --map "A=Alice,B=Bob"
+family-archive speakers --dir AudioRecordings --map "A=Alice,B=Bob"
 ```
 
 ### 5. Format Transcripts
@@ -78,44 +79,44 @@ python scripts/label_speakers.py --dir AudioRecordings --map "A=Alice,B=Bob"
 Add summaries, markdown headers, and clean formatting:
 
 ```bash
-python scripts/format_transcripts.py --dry-run
-python scripts/format_transcripts.py
+family-archive format --dry-run
+family-archive format
 ```
 
 ### 6. Rename Generic Files
 
 ```bash
 # Generate rename proposals
-python scripts/propose_renames.py --dry-run  # preview
-python scripts/propose_renames.py            # generate proposals
+family-archive rename --dry-run     # preview
+family-archive rename               # generate proposals
 
 # Review _rename-proposals.md
 # Edit _rename-proposals.json if needed (set "approved": false to skip)
 
 # Apply approved renames
-python scripts/apply_renames.py --dry-run    # preview
-python scripts/apply_renames.py              # apply
+family-archive rename --apply --dry-run     # preview
+family-archive rename --apply               # apply
 ```
 
 ### 7. Detect Dates in Undated Files
 
 ```bash
-python scripts/detect_dates.py               # propose dates
+family-archive detect-dates              # propose dates
 # Review _date-proposals.json
-python scripts/detect_dates.py --apply       # apply approved dates
+family-archive detect-dates --apply      # apply approved dates
 ```
 
 ### 8. Catalog Photos and Detect Duplicates
 
 ```bash
-python scripts/catalog_photos.py
-python scripts/handle_duplicates.py
+family-archive photos
+family-archive duplicates
 ```
 
 ### 9. Generate Report
 
 ```bash
-python scripts/generate_report.py
+family-archive report
 ```
 
 ## Tips
