@@ -54,33 +54,37 @@ def _build_ext_map(taxonomy):
     return ext_map
 
 
-def get_file_type(ext, taxonomy=None):
-    """Classify a file by its extension."""
+def get_file_type(ext, taxonomy=None, _cache={}):
+    """Classify a file by its extension. Caches the ext_map per taxonomy id."""
     if taxonomy is None:
         taxonomy = DEFAULT_TAXONOMY
     ext = ext.lower()
-    ext_map = _build_ext_map(taxonomy)
-    return ext_map.get(ext, "unknown")
+    cache_key = id(taxonomy)
+    if cache_key not in _cache:
+        _cache[cache_key] = _build_ext_map(taxonomy)
+    return _cache[cache_key].get(ext, "unknown")
 
 
 # ── Folder hint classification (taxonomy-driven) ──────────────────────────────
 
 
 def _build_folder_hints(taxonomy):
-    """Build keyword → dest_folder lookup from taxonomy folders."""
+    """Build keyword → dest_folder lookup from taxonomy folders.
+    Keywords are lowercased to ensure case-insensitive matching."""
     hints = {}
     for dest_folder, info in taxonomy["folders"].items():
         for keyword in info.get("keywords", []):
-            hints[keyword] = dest_folder
+            hints[keyword.lower()] = dest_folder
     return hints
 
 
 def _build_filename_patterns(taxonomy):
-    """Build keyword → dest_folder lookup from taxonomy folders (filename_keywords)."""
+    """Build keyword → dest_folder lookup from taxonomy folders (filename_keywords).
+    Keywords are lowercased to ensure case-insensitive matching."""
     patterns = {}
     for dest_folder, info in taxonomy["folders"].items():
         for keyword in info.get("filename_keywords", []):
-            patterns[keyword] = dest_folder
+            patterns[keyword.lower()] = dest_folder
     return patterns
 
 

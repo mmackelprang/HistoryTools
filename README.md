@@ -122,7 +122,7 @@ Classification rules -- file types, folder keywords, and processing pipelines --
 
 **What it controls:**
 
-- **File types** -- which extensions map to which category (document, audio, photo, etc.) and where unknown types are routed
+- **File types** -- which extensions map to which category (document, audio, photo, etc.) and where specific types are routed (e.g., spreadsheets to NeedsReview, email to _imports/)
 - **Folders** -- which keywords in folder names or filenames trigger classification into specific destination folders
 - **Processing pipelines** -- which processing steps (transcribe, format, rename, etc.) apply to each file type
 

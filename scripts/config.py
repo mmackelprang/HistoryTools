@@ -152,7 +152,8 @@ def load_taxonomy(taxonomy_path=None):
         taxonomy_path = TOOLKIT_DIR / "taxonomy.json"
 
     if not Path(taxonomy_path).exists():
-        return DEFAULT_TAXONOMY.copy()
+        import copy
+        return copy.deepcopy(DEFAULT_TAXONOMY)
 
     with open(taxonomy_path, 'r', encoding='utf-8') as f:
         return json.load(f)
