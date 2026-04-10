@@ -22,6 +22,27 @@ A CLI toolkit for digitizing, organizing, transcribing, and searching family arc
 | 13 | `handle_duplicates.py` | Finds identical files by MD5 hash, moves dupes |
 | 14 | `generate_report.py` | Produces archive summary with statistics |
 
+## Installation
+
+### From source (recommended for development)
+```bash
+git clone https://github.com/mmackelprang/HistoryTools.git
+cd HistoryTools
+pip install -e ".[all]"
+```
+
+### From PyPI (coming soon)
+```bash
+pip install family-archive-toolkit
+```
+
+After installation, the `family-archive` command is available:
+```bash
+family-archive --help
+family-archive verify
+family-archive bootstrap /path/to/scans
+```
+
 ## Quick Start
 
 ```bash
@@ -30,7 +51,9 @@ git clone https://github.com/mmackelprang/HistoryTools.git
 cd HistoryTools
 
 # 2. Install Python dependencies
-pip install PyMuPDF exifread openai-whisper Pillow google-genai assemblyai python-dotenv anthropic
+pip install -e ".[all]"
+# Or install manually:
+# pip install PyMuPDF exifread openai-whisper Pillow google-genai assemblyai python-dotenv anthropic
 
 # 3. Install system tools
 # Tesseract OCR: https://github.com/tesseract-ocr/tesseract

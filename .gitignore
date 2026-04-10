@@ -16,5 +16,8 @@ _format-*.log
 _gemini-run*.log
 _assemblyai-run*.log
 *.output
+*.egg-info/
+dist/
+build/
 .DS_Store
 Thumbs.db
