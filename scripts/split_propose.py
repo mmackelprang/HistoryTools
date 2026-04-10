@@ -177,6 +177,8 @@ For each segment, provide:
 - Detected date (YYYY-MM-DD format, use 00 for unknown parts)
 - A short descriptive filename slug (lowercase-kebab-case, under 8 words)
 - A one-line description
+- The document category (one of: letter, journal, card, certificate, obituary,
+  legal_document, financial, medical, recipe, memoir, photo, other)
 - Whether pages should be skipped (blank separators)
 
 Transcript:
@@ -190,6 +192,7 @@ Respond with JSON only:
       "date": "1984-03-15",
       "slug": "letter-alice-bob-spring-update",
       "description": "Letter from Alice about spring semester",
+      "category": "letter",
       "skip": false
     }}
   ]
@@ -243,6 +246,23 @@ def format_page_range(pages):
     return ", ".join(ranges)
 
 
+# Map AI-returned categories to taxonomy folders
+CATEGORY_TO_FOLDER = {
+    "letter": "Correspondence/Letters",
+    "card": "Correspondence/Cards",
+    "journal": "Journals",
+    "certificate": "Documents/Legal",
+    "legal_document": "Documents/Legal",
+    "obituary": "Memories",
+    "memoir": "Memories",
+    "financial": "Financial",
+    "medical": "Medical",
+    "recipe": "Documents/Recipes",
+    "photo": "Media/Photos",
+    "other": None,  # keep in source folder
+}
+
+
 def build_proposal_entry(source_file, source_pages, segments, transcript_pages, dest_root, pdf_path):
     """Build a proposal entry for one source file.
 
@@ -259,11 +279,21 @@ def build_proposal_entry(source_file, source_pages, segments, transcript_pages, 
     """
     enriched_segments = []
 
+    # Determine source folder as fallback
+    try:
+        rel = pdf_path.relative_to(dest_root)
+        source_folder = str(rel.parent).replace("\\", "/")
+        if source_folder == ".":
+            source_folder = ""
+    except ValueError:
+        source_folder = ""
+
     for seg in segments:
         pages = seg.get("pages", [])
         date = seg.get("date", "undated")
         slug = seg.get("slug", "unknown")
         description = seg.get("description", "")
+        category = seg.get("category", "other")
         skip = seg.get("skip", False)
 
         # Sanitize slug (fallback to "unknown" if empty after sanitization)
@@ -283,14 +313,17 @@ def build_proposal_entry(source_file, source_pages, segments, transcript_pages, 
         else:
             proposed_name = f"undated_{slug}.pdf"
 
-        # Determine proposed folder (same folder as source)
-        try:
-            rel = pdf_path.relative_to(dest_root)
-            proposed_folder = str(rel.parent).replace("\\", "/")
-            if proposed_folder == ".":
-                proposed_folder = ""
-        except ValueError:
-            proposed_folder = ""
+        # Determine proposed folder from category (taxonomy-aware)
+        category_folder = CATEGORY_TO_FOLDER.get(category.lower() if category else "other")
+        if category_folder:
+            # Add year subfolder for dated documents
+            if date and date != "undated" and date[:4] != "0000":
+                proposed_folder = f"{category_folder}/{date[:4]}"
+            else:
+                proposed_folder = f"{category_folder}/Undated"
+        else:
+            # Fallback to source folder for unrecognized categories
+            proposed_folder = source_folder
 
         # Build preview from first page of segment
         preview = ""
@@ -304,6 +337,7 @@ def build_proposal_entry(source_file, source_pages, segments, transcript_pages, 
             "detected_date": date,
             "proposed_name": proposed_name,
             "proposed_folder": proposed_folder + "/" if proposed_folder else "",
+            "category": category,
             "description": description,
             "preview": preview,
             "skip": skip,
@@ -344,12 +378,14 @@ def write_proposals_md(proposals, dest_root):
         pages = p["source_pages"]
         seg_count = len(p["segments"])
         lines.append(f"\n## {source} ({pages} pages -> {seg_count} segments)\n")
-        lines.append("| # | Pages | Date | Proposed Name | Preview |")
-        lines.append("|---|-------|------|--------------|---------|")
+        lines.append("| # | Pages | Date | Category | Destination | Proposed Name | Preview |")
+        lines.append("|---|-------|------|----------|-------------|--------------|---------|")
 
         for i, seg in enumerate(p["segments"], 1):
             page_str = format_page_range(seg["pages"])
             date = seg.get("detected_date", "\u2014")
+            category = seg.get("category", "other")
+            dest_folder = seg.get("proposed_folder", "").rstrip("/")
             if seg.get("skip"):
                 name = "*(skip)*"
             else:
@@ -357,7 +393,7 @@ def write_proposals_md(proposals, dest_root):
             preview = seg.get("preview", "")
             # Escape pipes in preview
             preview = preview.replace("|", "\\|")
-            lines.append(f'| {i} | {page_str} | {date} | {name} | "{preview}" |')
+            lines.append(f'| {i} | {page_str} | {date} | {category} | {dest_folder} | {name} | "{preview}" |')
 
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return md_path
