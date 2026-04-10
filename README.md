@@ -111,6 +111,18 @@ family-archive photos
 family-archive duplicates
 family-archive report
 
+# Build the search index (rebuilds from filesystem)
+family-archive reindex
+family-archive reindex --check    # verify index matches filesystem
+
+# Search across all transcripts
+family-archive search "Springfield"
+family-archive search "Springfield" --folder Letters
+family-archive search "Springfield" --type audio --year 1984
+
+# Archive statistics
+family-archive stats
+
 # Review AI API costs
 family-archive costs              # summary by pipeline step
 family-archive costs --detail     # per-session breakdown

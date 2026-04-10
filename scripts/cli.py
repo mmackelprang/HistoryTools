@@ -207,6 +207,100 @@ def cmd_costs(args):
             print(f"  {i}. {start}  {s.get('total_calls', 0)} calls  ${s.get('total_cost_usd', 0):.4f}")
 
 
+def cmd_reindex(args):
+    """Rebuild the search index from the filesystem."""
+    sys.argv = ['reindex'] + args
+    import argparse as _argparse
+    parser = _argparse.ArgumentParser(description="Rebuild search index")
+    parser.add_argument("--config", default=None)
+    parser.add_argument("--check", action="store_true", help="Verify without modifying")
+    parsed = parser.parse_args(args)
+
+    from .config import load_config
+    from .db import get_db, reindex_all, check_index, close_db
+    config = load_config(parsed.config)
+    conn = get_db(config["dest_root"], config)
+    if parsed.check:
+        check_index(conn, config["dest_root"])
+    else:
+        reindex_all(conn, config["dest_root"])
+    close_db(conn)
+
+
+def cmd_search(args):
+    """Search across all transcripts."""
+    import argparse as _argparse
+    parser = _argparse.ArgumentParser(description="Search transcripts")
+    parser.add_argument("query", help="Search query")
+    parser.add_argument("--config", default=None)
+    parser.add_argument("--folder", default=None)
+    parser.add_argument("--type", default=None)
+    parser.add_argument("--year", default=None)
+    parser.add_argument("--limit", type=int, default=10)
+    parsed = parser.parse_args(args)
+
+    from .config import load_config
+    from .db import get_db, search, close_db
+    config = load_config(parsed.config)
+    conn = get_db(config["dest_root"], config)
+    results = search(conn, parsed.query, folder=parsed.folder, file_type=parsed.type,
+                     year=parsed.year, limit=parsed.limit)
+    close_db(conn)
+
+    if not results:
+        print(f'No results for "{parsed.query}"')
+        return
+
+    print(f'\nFound {len(results)} results for "{parsed.query}":\n')
+    for i, r in enumerate(results, 1):
+        # Encode safely for Windows console
+        path = r["path"]
+        snippet = r["snippet"].encode("ascii", errors="replace").decode("ascii")
+        print(f'  {i}. {path}')
+        print(f'     "{snippet}"')
+        print(f'     ({r["file_type"]}, {r["date_prefix"]}, {r["word_count"]} words)\n')
+
+
+def cmd_stats(args):
+    """Show archive statistics from the search index."""
+    import argparse as _argparse
+    parser = _argparse.ArgumentParser(description="Archive statistics")
+    parser.add_argument("--config", default=None)
+    parsed = parser.parse_args(args)
+
+    from .config import load_config
+    from .db import get_db, get_stats, close_db
+    config = load_config(parsed.config)
+    dest_root = config["dest_root"]
+    conn = get_db(dest_root, config)
+    stats = get_stats(conn)
+    close_db(conn)
+
+    # Determine DB path for display
+    db_path = config.get("db_path") or str(dest_root / ".archive.db")
+
+    print(f"\nArchive: {dest_root}")
+    print(f"Database: {db_path}")
+
+    print(f"\nFiles:        {stats['total_files']:,}")
+    type_labels = {
+        "document": "Documents", "audio": "Audio", "photo": "Photos",
+        "video": "Video", "transcript": "Transcripts", "spreadsheet": "Spreadsheets",
+        "email": "Email", "genealogy": "Genealogy", "unknown": "Other",
+    }
+    for ftype, count in sorted(stats["files_by_type"].items(), key=lambda x: -x[1]):
+        label = type_labels.get(ftype, ftype.title())
+        print(f"  {label:14s} {count:,}")
+
+    print(f"\nTranscripts:  {stats['total_transcripts']:,}")
+    for conf, count in sorted(stats["transcripts_by_confidence"].items(), key=lambda x: -x[1]):
+        print(f"  {conf.title():14s} {count:,}")
+
+    print(f"\nTotal words: {stats['total_words']:,}")
+    if stats["last_indexed"]:
+        print(f"Last indexed: {stats['last_indexed']}")
+
+
 def cmd_placeholder(name):
     """Return a handler for placeholder commands."""
     def handler(args):
@@ -246,7 +340,9 @@ def main():
     subparsers.add_parser('verify', help='Verify required tools are installed')
     subparsers.add_parser('split', help='Split compilation PDFs into individual documents (or --apply)')
     subparsers.add_parser('costs', help='Show AI API cost summary (--detail for session breakdown)')
-    subparsers.add_parser('search', help='Search archive contents (coming soon)')
+    subparsers.add_parser('reindex', help='Rebuild search index from filesystem')
+    subparsers.add_parser('search', help='Search across all transcripts')
+    subparsers.add_parser('stats', help='Show archive statistics from search index')
     subparsers.add_parser('serve', help='Start web UI for browsing (coming soon)')
 
     # Parse only the subcommand name; everything else is passed through
@@ -272,7 +368,9 @@ def main():
         'verify': cmd_verify,
         'split': cmd_split,
         'costs': cmd_costs,
-        'search': cmd_placeholder('search'),
+        'reindex': cmd_reindex,
+        'search': cmd_search,
+        'stats': cmd_stats,
         'serve': cmd_placeholder('serve'),
     }
 

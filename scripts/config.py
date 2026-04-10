@@ -201,7 +201,8 @@ DEFAULT_CONFIG = {
         "FamilyMembers", "NeedsReview"
     ],
     "skip_existing_transcripts": True,
-    "custom_categories": {}      # filename pattern -> (category, subfolder) overrides
+    "custom_categories": {},     # filename pattern -> (category, subfolder) overrides
+    "db_path": None,             # optional: path to .archive.db (default: dest_root/.archive.db)
 }
 
 def load_config(config_path=None):

@@ -64,7 +64,7 @@ class TestCLIHelp:
 class TestPlaceholderCommands:
     """Test that placeholder commands print 'Coming soon'."""
 
-    @pytest.mark.parametrize("cmd", ["search", "serve"])
+    @pytest.mark.parametrize("cmd", ["serve"])
     def test_placeholder_prints_coming_soon(self, cmd):
         result = subprocess.run(
             [sys.executable, "-m", "scripts.cli", cmd],
