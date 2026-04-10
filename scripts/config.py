@@ -165,7 +165,8 @@ DEFAULT_CONFIG = {
     "source_root": "",           # REQUIRED: path to source files
     "dest_root": "",             # REQUIRED: path to output organized folder
     "mode": "standalone",        # "standalone" = new archive, "merge" = add to existing
-    "exclude_dirs": [".organizer", ".trashbox", "Organized", "Pics2PDF"],
+    "temp_dir": None,            # optional: base dir for temp files (default: dest_root)
+    "exclude_dirs": [".organizer", ".trashbox", "Organized", "Pics2PDF", "_historytools_temp"],
     "exclude_exts": [".ini", ".lnk", ".aup3", ".db", ".tmp"],
     "tesseract_path": "tesseract",
     "whisper_model": "base",     # "tiny", "base", "small", "medium", "large"

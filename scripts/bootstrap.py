@@ -345,17 +345,30 @@ def extract_zips_recursive(directory, depth=0, max_depth=5):
     return extracted
 
 
-def prepare_source(source_path):
+def prepare_source(source_path, temp_base=None):
     """Prepare source for scanning. If source is a ZIP file or a directory
     containing ZIPs, extract to a temp directory so the original source is
     never modified. Returns (effective_source_root, temp_dir_or_None).
-    Caller must clean up temp_dir when done."""
+    Caller must clean up temp_dir when done.
+
+    Args:
+        source_path: Path to source directory or ZIP file.
+        temp_base: Base directory for temp files. If None, uses system default.
+                   If set, creates _historytools_temp/ under this path."""
     source_path = Path(source_path)
+
+    def _make_temp_dir():
+        """Create a temp directory in the configured location."""
+        if temp_base:
+            base = Path(temp_base) / "_historytools_temp"
+            base.mkdir(parents=True, exist_ok=True)
+            return str(base)
+        return tempfile.mkdtemp(prefix="historytools_")
 
     if source_path.is_file() and source_path.suffix.lower() == ".zip":
         # Source is a ZIP file — extract to temp directory
-        temp_dir = tempfile.mkdtemp(prefix="historytools_")
-        print(f"Source is a ZIP file — extracting to temporary directory...")
+        temp_dir = _make_temp_dir()
+        print(f"Source is a ZIP file — extracting to {temp_dir}")
         try:
             _safe_extract_zip(source_path, temp_dir)
         except zipfile.BadZipFile:
@@ -376,7 +389,7 @@ def prepare_source(source_path):
         if zip_files:
             # Copy source to temp dir so we don't modify the original
             print(f"Found {len(zip_files)} ZIP file(s) in source — copying to temp dir for extraction...")
-            temp_dir = tempfile.mkdtemp(prefix="historytools_")
+            temp_dir = _make_temp_dir()
             shutil.copytree(str(source_path), os.path.join(temp_dir, "source"),
                             dirs_exist_ok=True)
             work_dir = Path(temp_dir) / "source"
@@ -732,16 +745,22 @@ def main():
     taxonomy = load_taxonomy(args.taxonomy)
 
     # Load config for dest_root and exclusions
+    temp_base = None
     try:
         config = load_config(args.config)
         dest_root = config["dest_root"]
         exclude_dirs = config["exclude_dirs"]
         exclude_exts = config["exclude_exts"]
+        temp_base = config.get("temp_dir")  # optional: base dir for temp files
+        if temp_base is None:
+            # Default to dest_root/_historytools_temp if not specified
+            temp_base = str(dest_root)
     except (ValueError, FileNotFoundError):
         if args.source:
             dest_root = Path(args.source) / "Organized"
-            exclude_dirs = {".organizer", ".trashbox", "Organized", "__pycache__"}
+            exclude_dirs = {".organizer", ".trashbox", "Organized", "__pycache__", "_historytools_temp"}
             exclude_exts = {".ini", ".lnk", ".aup3", ".db", ".tmp"}
+            temp_base = str(dest_root)
         elif args.execute:
             # In execute mode, we'll get dest_root from the plan file
             dest_root = None
@@ -785,7 +804,7 @@ def main():
         sys.exit(1)
 
     # Handle ZIP files and extract nested ZIPs
-    source_root, temp_dir = prepare_source(source_path)
+    source_root, temp_dir = prepare_source(source_path, temp_base=temp_base)
 
     try:
         print(f"Scanning {source_root}...")
