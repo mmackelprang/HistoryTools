@@ -929,53 +929,198 @@ The web UI evolves from a simple file browser into a **life history application*
 - User can edit/curate the AI-generated narrative
 - Export as a book/PDF for printing or sharing with family
 
-### Data Model for Correlation
+### The Hyper-Personal-Web
 
-The SQLite schema expands to support correlation:
+The deepest architectural concept is the **hyper-personal-web** — the inverse of the
+world-wide-web. Where the WWW links between websites, the hyper-personal-web links
+between moments in a family's history across every type of artifact.
+
+Every artifact is a node. Every mention of a person, place, time, or event creates a
+**deep link** — not just "this file mentions Alice" but "Alice is mentioned at page 3,
+paragraph 2 of this letter" or "Alice speaks at timestamp 4:32 in this recording" or
+"Alice appears in the upper-left quadrant of this photo."
+
+**Core dimensions:** People, Places, Times, Events. These are the axes of the mesh.
+Any artifact can connect to multiple entities on each dimension simultaneously. A single
+letter might reference 5 people, 3 places, and 2 events.
+
+**Traversal is bidirectional:** From a person → find all artifacts. From a place → find
+everyone who was there. From an event → find all related artifacts across every media type.
+From a moment in an audio recording → find the letter being discussed.
+
+**The system is extensible:** People, places, times, and events are the initial dimensions,
+but the architecture supports adding new dimensions (organizations, objects, themes,
+emotions) without schema changes — just new entity types and reference types.
+
+### Data Model: Entities, References, and Anchors
+
+The data model has three layers:
+
+1. **Entities** — the things being connected (people, places, events, etc.)
+2. **References** — connections between artifacts and entities
+3. **Anchors** — precise locations within artifacts where references occur
 
 ```sql
--- Core: every piece of content has a date range and location
-CREATE TABLE events (
+-- ── Artifacts (files in the archive) ───────────────────────────────────────
+
+CREATE TABLE artifacts (
     id INTEGER PRIMARY KEY,
     file_id INTEGER REFERENCES files(id),
-    event_date DATE,                    -- primary date
+    artifact_type TEXT,                 -- letter, journal_entry, photo, audio_segment, etc.
+    event_date DATE,
     event_date_end DATE,                -- for ranges (journal spanning months)
-    event_type TEXT,                    -- letter, journal_entry, photo, sms, email, location, etc.
     latitude REAL,
     longitude REAL,
-    location_name TEXT,                 -- "Springfield, IL" or "Hometown, State"
-    summary TEXT,                       -- one-line description
-    UNIQUE(file_id, event_date, event_type)
+    location_name TEXT,
+    summary TEXT,
+    UNIQUE(file_id, artifact_type, event_date)
 );
 
--- People mentioned in or connected to events
-CREATE TABLE event_people (
-    event_id INTEGER REFERENCES events(id),
-    person_id INTEGER REFERENCES people(id),
-    role TEXT,                          -- author, recipient, subject, photographer, present
-    PRIMARY KEY (event_id, person_id, role)
+-- ── Entities (the nodes in the mesh) ───────────────────────────────────────
+
+CREATE TABLE entities (
+    id INTEGER PRIMARY KEY,
+    entity_type TEXT NOT NULL,          -- person, place, event, organization, theme, ...
+    name TEXT NOT NULL,
+    description TEXT,
+    metadata JSON,                      -- flexible key-value for type-specific data
+    UNIQUE(entity_type, name)
 );
 
--- Location history (from Google Timeline, etc.)
+-- Person-specific data (extends entities where entity_type='person')
+CREATE TABLE people (
+    entity_id INTEGER PRIMARY KEY REFERENCES entities(id),
+    birth_date DATE,
+    death_date DATE,
+    familysearch_id TEXT               -- for Phase 7 FamilySearch integration
+);
+
+-- Place-specific data
+CREATE TABLE places (
+    entity_id INTEGER PRIMARY KEY REFERENCES entities(id),
+    latitude REAL,
+    longitude REAL,
+    address TEXT
+);
+
+-- Relationships between entities (person↔person, person↔organization, etc.)
+CREATE TABLE entity_relationships (
+    entity_a INTEGER REFERENCES entities(id),
+    entity_b INTEGER REFERENCES entities(id),
+    relationship TEXT,                  -- spouse, parent, child, sibling, member_of, ...
+    start_date DATE,
+    end_date DATE,
+    PRIMARY KEY (entity_a, entity_b, relationship)
+);
+
+-- ── References (connections between artifacts and entities) ─────────────────
+
+CREATE TABLE references (
+    id INTEGER PRIMARY KEY,
+    artifact_id INTEGER REFERENCES artifacts(id),
+    entity_id INTEGER REFERENCES entities(id),
+    ref_type TEXT,                      -- author, recipient, subject, speaker, location,
+                                       -- mentioned, photographed, present, ...
+    confidence REAL DEFAULT 1.0,        -- 0.0-1.0, for AI-detected references
+    source TEXT,                        -- manual, ai_transcript, ai_vision, exif, ...
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Anchors (precise locations within artifacts) ───────────────────────────
+-- These are the "hyperlinks" of the personal web — they point to specific
+-- moments/locations within source material.
+
+CREATE TABLE anchors (
+    id INTEGER PRIMARY KEY,
+    reference_id INTEGER REFERENCES references(id),
+    anchor_type TEXT NOT NULL,          -- page, timestamp, coordinates, paragraph, line
+    -- Page-based (PDFs, documents)
+    page_number INTEGER,
+    paragraph_offset INTEGER,
+    -- Time-based (audio, video)
+    start_time_ms INTEGER,
+    end_time_ms INTEGER,
+    -- Spatial (photos, scanned documents)
+    x_pct REAL,                         -- 0.0-1.0 percentage coordinates
+    y_pct REAL,
+    width_pct REAL,
+    height_pct REAL,
+    -- Text-based (transcripts)
+    text_offset INTEGER,                -- character offset into transcript
+    text_length INTEGER,
+    snippet TEXT                         -- short excerpt for preview
+);
+
+-- ── Location history (continuous timeline) ─────────────────────────────────
+
 CREATE TABLE location_history (
     id INTEGER PRIMARY KEY,
-    person_id INTEGER REFERENCES people(id),
+    entity_id INTEGER REFERENCES entities(id),  -- which person
     timestamp DATETIME,
     latitude REAL,
     longitude REAL,
     location_name TEXT,
-    source TEXT                         -- google_timeline, photo_exif, manual
+    source TEXT                          -- google_timeline, photo_exif, manual
 );
+```
 
--- Relationships between people
-CREATE TABLE relationships (
-    person_a INTEGER REFERENCES people(id),
-    person_b INTEGER REFERENCES people(id),
-    relationship TEXT,                  -- spouse, parent, child, sibling, friend
-    start_date DATE,
-    end_date DATE,
-    PRIMARY KEY (person_a, person_b, relationship)
-);
+**How the mesh works in practice:**
+
+A letter from Alice to Bob, written on March 15, 1984, mentioning a trip to Springfield:
+
+```
+artifact: letter (file_id=42, date=1984-03-15)
+  ├─ reference → entity:Alice (ref_type=author)
+  │   └─ anchor: page 1, paragraph 1 (return address)
+  ├─ reference → entity:Bob (ref_type=recipient)
+  │   └─ anchor: page 1, paragraph 1 (greeting "Dear Bob")
+  ├─ reference → entity:Springfield (ref_type=location_mentioned)
+  │   └─ anchor: page 2, paragraph 3 ("we drove to Springfield last week")
+  └─ reference → entity:ChristmasVisit1983 (ref_type=event_mentioned)
+      └─ anchor: page 2, paragraph 5 ("remember when we all got together")
+```
+
+An audio recording where Alice talks about the same trip at timestamp 4:32:
+
+```
+artifact: audio_segment (file_id=87, date=1984-06-14)
+  ├─ reference → entity:Alice (ref_type=speaker)
+  │   └─ anchor: timestamp 0:00 - 60:12
+  ├─ reference → entity:Springfield (ref_type=location_mentioned)
+  │   └─ anchor: timestamp 4:32 - 4:58 ("...when we went to Springfield...")
+  └─ reference → entity:ChristmasVisit1983 (ref_type=event_mentioned)
+      └─ anchor: timestamp 4:32 - 5:15
+```
+
+**Querying the mesh:**
+
+```sql
+-- "Show me everything about Springfield"
+SELECT a.*, ref.ref_type, anch.snippet
+FROM artifacts a
+JOIN references ref ON ref.artifact_id = a.id
+JOIN entities e ON ref.entity_id = e.id
+LEFT JOIN anchors anch ON anch.reference_id = ref.id
+WHERE e.name = 'Springfield' AND e.entity_type = 'place';
+
+-- "What was Alice doing in March 1984?"
+SELECT a.*, ref.ref_type, anch.snippet
+FROM artifacts a
+JOIN references ref ON ref.artifact_id = a.id
+JOIN entities e ON ref.entity_id = e.id
+LEFT JOIN anchors anch ON anch.reference_id = ref.id
+WHERE e.name = 'Alice' AND a.event_date BETWEEN '1984-03-01' AND '1984-03-31';
+
+-- "Find the audio moment where Alice talks about what Bob wrote in this letter"
+-- (cross-artifact linking via shared entity references)
+SELECT a2.*, anch2.start_time_ms, anch2.snippet
+FROM references ref1
+JOIN references ref2 ON ref1.entity_id = ref2.entity_id  -- same entity
+JOIN artifacts a2 ON ref2.artifact_id = a2.id
+JOIN anchors anch2 ON anch2.reference_id = ref2.id
+WHERE ref1.artifact_id = 42  -- the letter
+  AND a2.artifact_type = 'audio_segment'
+  AND anch2.anchor_type = 'timestamp';
 ```
 
 ### Phasing for the Vision
