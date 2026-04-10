@@ -85,7 +85,8 @@ family-archive speakers --dir AudioRecordings --map "A=Alice,B=Bob"  # batch
 
 # Format transcripts with summaries and markdown structure
 family-archive format --dry-run
-family-archive format
+family-archive format                    # free mechanical cleanup
+family-archive format --with-summary     # + AI summary (requires API key)
 
 # Propose descriptive filenames for generic files
 family-archive rename --dry-run          # preview
@@ -152,7 +153,8 @@ These features require API keys (see [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEY
 | `family-archive transcribe` | Google Gemini | OpenAI GPT-4o | AI vision for handwriting OCR | ~$0.50-1.00 per 1000 pages |
 | `family-archive transcribe --low-confidence-only` | Google Gemini | OpenAI GPT-4o | AI only for low-confidence files | Much less (only handwriting) |
 | `family-archive transcribe-audio` | AssemblyAI | -- | Speaker-diarized audio transcription | ~$0.01/minute |
-| `family-archive format` | Anthropic Claude | OpenAI GPT-4o | Markdown formatting + summaries | ~$0.10-0.20 per 500 files |
+| `family-archive format` | — (mechanical) | — | Page breaks, whitespace cleanup, artifact removal | **Free** |
+| `family-archive format --with-summary` | Any AI vendor | — | + AI-generated summary at top | ~$0.10-0.20 per 500 files |
 | `family-archive rename` | Google Gemini | OpenAI GPT-4o | AI-suggested filenames | ~$0.10-0.30 per 500 files |
 | `family-archive detect-dates` | Google Gemini | OpenAI GPT-4o | Date detection in undated files | ~$0.05-0.10 per 200 files |
 | `family-archive split` | Google Gemini | OpenAI GPT-4o | Document boundary detection | ~$0.01-0.05 per file |

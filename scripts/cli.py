@@ -65,7 +65,7 @@ def cmd_transcribe_audio(args):
 
 
 def cmd_format(args):
-    """Add summaries, headers, and markdown formatting to transcripts."""
+    """Format transcripts — mechanical cleanup (free) with optional AI summary (--with-summary)."""
     sys.argv = ['format_transcripts'] + args
     from .format_transcripts import main
     main()
