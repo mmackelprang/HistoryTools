@@ -161,6 +161,31 @@ def load_taxonomy(taxonomy_path=None):
 
     with open(taxonomy_path, 'r', encoding='utf-8') as f:
         return json.load(f)
+def find_tesseract():
+    """Find the Tesseract executable, checking common install locations on Windows."""
+    import shutil as _shutil
+    import platform
+
+    # Check PATH first
+    found = _shutil.which("tesseract")
+    if found:
+        return found
+
+    # Check common Windows install locations
+    if platform.system() == "Windows":
+        common_paths = [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe",
+        ]
+        for p in common_paths:
+            if Path(p).exists():
+                return str(p)
+
+    # Fallback — let subprocess try and fail with a clear error
+    return "tesseract"
+
+
 DEFAULT_CONFIG = {
     "source_root": "",           # REQUIRED: path to source files
     "dest_root": "",             # REQUIRED: path to output organized folder
@@ -168,7 +193,7 @@ DEFAULT_CONFIG = {
     "temp_dir": None,            # optional: base dir for temp files (default: dest_root)
     "exclude_dirs": [".organizer", ".trashbox", "Organized", "Pics2PDF", "_historytools_temp"],
     "exclude_exts": [".ini", ".lnk", ".aup3", ".db", ".tmp"],
-    "tesseract_path": "tesseract",
+    "tesseract_path": find_tesseract(),  # auto-detect on Windows
     "whisper_model": "base",     # "tiny", "base", "small", "medium", "large"
     "transcribe_folders": [
         "Letters", "Journals", "Cards",

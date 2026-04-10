@@ -77,17 +77,14 @@ def main():
 
     # Tesseract
     def check_tesseract():
-        paths = [
-            "tesseract",
-        ]
-        for p in paths:
-            try:
-                r = subprocess.run([p, "--version"], capture_output=True, text=True, timeout=10)
-                version = r.stdout.split("\n")[0] if r.stdout else r.stderr.split("\n")[0]
-                return f"{version} at {p}"
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                continue
-        raise FileNotFoundError("tesseract not found — install from https://github.com/UB-Mannheim/tesseract/wiki")
+        from config import find_tesseract
+        tess_path = find_tesseract()
+        try:
+            r = subprocess.run([tess_path, "--version"], capture_output=True, text=True, timeout=10)
+            version = r.stdout.split("\n")[0] if r.stdout else r.stderr.split("\n")[0]
+            return f"{version} at {tess_path}"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            raise FileNotFoundError("tesseract not found — install from https://github.com/UB-Mannheim/tesseract/wiki")
     results.append(check("Tesseract OCR", check_tesseract))
 
     # FFmpeg
