@@ -97,6 +97,14 @@ family-archive rename --apply            # apply approved renames
 family-archive detect-dates              # generate proposals
 family-archive detect-dates --apply      # apply approved dates
 
+# Split compilation PDFs into individual documents
+family-archive split --dry-run           # preview splittable files
+family-archive split                     # generate split proposals
+# Review _split-proposals.md, then:
+family-archive split --apply --dry-run   # preview
+family-archive split --apply             # apply approved splits
+family-archive split --apply --archive-original  # move originals to _compilations/
+
 # Catalog photos, detect duplicates, generate report
 family-archive photos
 family-archive duplicates
@@ -143,6 +151,7 @@ These features require API keys (see [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEY
 | `family-archive format` | Anthropic Claude | OpenAI GPT-4o | Markdown formatting + summaries | ~$0.10-0.20 per 500 files |
 | `family-archive rename` | Google Gemini | OpenAI GPT-4o | AI-suggested filenames | ~$0.10-0.30 per 500 files |
 | `family-archive detect-dates` | Google Gemini | OpenAI GPT-4o | Date detection in undated files | ~$0.05-0.10 per 200 files |
+| `family-archive split` | Google Gemini | OpenAI GPT-4o | Document boundary detection | ~$0.01-0.05 per file |
 
 All AI features are optional. Without API keys, local tools (Tesseract OCR, Whisper) are used instead.
 A unified AI client (`ai_client.py`) supports Gemini, OpenAI, and Anthropic — vendor swapping

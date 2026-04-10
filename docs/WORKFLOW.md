@@ -109,7 +109,32 @@ family-archive rename --apply --dry-run     # preview
 family-archive rename --apply               # apply
 ```
 
-### 7. Detect Dates in Undated Files
+### 7. Split Compilation PDFs
+
+If you have large PDFs containing multiple letters or journal entries in one file:
+
+```bash
+# Preview which files are candidates for splitting
+family-archive split --dry-run
+
+# Generate split proposals (AI detects document boundaries)
+family-archive split
+
+# Review _split-proposals.md
+# Edit _split-proposals.json if needed (set "approved": false to skip segments)
+
+# Apply approved splits
+family-archive split --apply --dry-run     # preview
+family-archive split --apply               # apply
+
+# Optionally move originals to _compilations/ subfolder
+family-archive split --apply --archive-original
+```
+
+Splitting uses existing transcripts for boundary detection (text-only AI call),
+and transcript extraction is free (string parsing, no re-transcription needed).
+
+### 8. Detect Dates in Undated Files
 
 ```bash
 family-archive detect-dates              # propose dates
@@ -117,14 +142,14 @@ family-archive detect-dates              # propose dates
 family-archive detect-dates --apply      # apply approved dates
 ```
 
-### 8. Catalog Photos and Detect Duplicates
+### 9. Catalog Photos and Detect Duplicates
 
 ```bash
 family-archive photos
 family-archive duplicates
 ```
 
-### 9. Generate Report
+### 10. Generate Report
 
 ```bash
 family-archive report

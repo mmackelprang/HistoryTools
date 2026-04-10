@@ -132,6 +132,18 @@ def cmd_init(args):
     main()
 
 
+def cmd_split(args):
+    """Propose or apply document splits for compilation PDFs."""
+    if '--apply' in args:
+        args_copy = [a for a in args if a != '--apply']
+        sys.argv = ['split_apply'] + args_copy
+        from .split_apply import main
+    else:
+        sys.argv = ['split_propose'] + args
+        from .split_propose import main
+    main()
+
+
 def cmd_placeholder(name):
     """Return a handler for placeholder commands."""
     def handler(args):
@@ -169,7 +181,7 @@ def main():
     subparsers.add_parser('duplicates', help='Find and handle duplicate files')
     subparsers.add_parser('report', help='Generate archive summary report')
     subparsers.add_parser('verify', help='Verify required tools are installed')
-    subparsers.add_parser('split', help='Split multi-document files (coming soon)')
+    subparsers.add_parser('split', help='Split compilation PDFs into individual documents (or --apply)')
     subparsers.add_parser('search', help='Search archive contents (coming soon)')
     subparsers.add_parser('serve', help='Start web UI for browsing (coming soon)')
 
@@ -194,7 +206,7 @@ def main():
         'duplicates': cmd_duplicates,
         'report': cmd_report,
         'verify': cmd_verify,
-        'split': cmd_placeholder('split'),
+        'split': cmd_split,
         'search': cmd_placeholder('search'),
         'serve': cmd_placeholder('serve'),
     }
