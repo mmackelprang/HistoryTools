@@ -235,7 +235,8 @@ System tools (install separately): [Tesseract OCR](https://github.com/tesseract-
 
 | File | Contents |
 |------|----------|
-| [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEYS.md) | API key setup for Gemini, AssemblyAI, and Anthropic |
+| [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEYS.md) | API keys, costs, recommended models, vendor options |
+| [docs/SYSTEM-REQUIREMENTS.md](docs/SYSTEM-REQUIREMENTS.md) | OS, Python, disk space, RAM, system tools |
 | [docs/WORKFLOW.md](docs/WORKFLOW.md) | Step-by-step processing guide |
 | [docs/VISION.md](docs/VISION.md) | Long-term product vision and roadmap |
 
