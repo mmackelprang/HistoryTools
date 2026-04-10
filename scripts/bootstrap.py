@@ -291,6 +291,14 @@ def make_slug(filename):
     return slug or "unnamed"
 
 
+def _safe_file_size(filepath):
+    """Get file size, returning 0 on any error (broken symlink, permissions, etc.)."""
+    try:
+        return filepath.stat().st_size
+    except (OSError, PermissionError):
+        return 0
+
+
 # ── MD5 hashing for duplicate detection ─────────────────────────────────────
 
 def md5_hash(filepath, chunk_size=8192):
@@ -393,7 +401,7 @@ def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts):
                 "dest_subfolder": dest_subfolder,
                 "proposed_name": proposed_name,
                 "file_type": file_type,
-                "file_size": filepath.stat().st_size,
+                "file_size": _safe_file_size(filepath),
                 "classification_source": class_source,
                 "classification_confidence": confidence,
                 "detected_date": date_prefix if date_prefix != "undated" else None,
@@ -498,6 +506,9 @@ def copy_files(plan):
         dest = dest_folder / entry["proposed_name"]
 
         if dest.exists():
+            # Check if this is a collision (different source) vs already-copied (same source)
+            if src.exists() and dest.stat().st_size != src.stat().st_size:
+                print(f"  WARNING: Destination collision — {entry['proposed_name']} already exists with different content")
             skipped += 1
             continue
 
@@ -526,13 +537,12 @@ def run_script(script_name, extra_args=None):
     return result.returncode == 0
 
 
-def execute_plan(plan, skip_transcribe=False, skip_format=False):
+def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_override=None):
     """Execute all stages of the bootstrap plan."""
     dest_root = Path(plan["dest_root"])
-    config_args = []
 
-    # Check if config.json exists, create temporary one if needed
-    config_path = SCRIPTS_DIR.parent / "config.json"
+    # Ensure config.json exists for downstream scripts
+    config_path = Path(config_path_override) if config_path_override else SCRIPTS_DIR.parent / "config.json"
     if not config_path.exists():
         temp_config = {
             "source_root": plan["source_root"],
@@ -542,6 +552,9 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False):
         with open(config_path, "w") as f:
             json.dump(temp_config, f, indent=2)
         print(f"Created temporary config.json")
+
+    # Pass config path to all downstream scripts
+    config_args = ["--config", str(config_path)] if config_path_override else []
 
     # Stage 1: Copy
     print(f"\n{'=' * 60}")
@@ -657,16 +670,20 @@ def main():
             exclude_dirs = {".organizer", ".trashbox", "Organized", "__pycache__"}
             exclude_exts = {".ini", ".lnk", ".aup3", ".db", ".tmp"}
         elif args.execute:
-            print("ERROR: No config.json found. Create one or specify --config.")
-            sys.exit(1)
+            # In execute mode, we'll get dest_root from the plan file
+            dest_root = None
         else:
             print("ERROR: Provide a source directory or create config.json")
             sys.exit(1)
 
-    plan_path = Path(dest_root) / "_bootstrap-plan.json" if Path(dest_root).exists() else Path("_bootstrap-plan.json")
-
-    # Execute mode
+    # Execute mode — load plan first, derive dest_root from it
     if args.execute:
+        # Try to find plan file
+        if dest_root:
+            plan_path = Path(dest_root) / "_bootstrap-plan.json"
+        else:
+            plan_path = Path("_bootstrap-plan.json")
+
         if not plan_path.exists():
             print(f"ERROR: No plan found at {plan_path}")
             print("Run with --scan first to generate a plan.")
@@ -680,7 +697,7 @@ def main():
             print(f"Would process {len(approved)} files")
             return
 
-        execute_plan(plan, args.skip_transcribe, args.skip_format)
+        execute_plan(plan, args.skip_transcribe, args.skip_format, args.config)
         return
 
     # Scan mode (or interactive)
@@ -723,7 +740,7 @@ def main():
         answer = "n"
 
     if answer in ("y", "yes"):
-        execute_plan(plan, args.skip_transcribe, args.skip_format)
+        execute_plan(plan, args.skip_transcribe, args.skip_format, args.config)
     else:
         print(f"Plan saved. Run later with: python scripts/bootstrap.py --execute")
 

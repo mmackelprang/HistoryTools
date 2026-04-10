@@ -48,7 +48,7 @@ cp .env.example .env
 # Edit .env with your API keys (see docs/SETUP-API-KEYS.md)
 
 # 7. Bootstrap — scan, classify, and process everything
-python scripts/bootstrap.py /path/to/your/scans --scan    # preview classification
+python scripts/bootstrap.py /path/to/your/scans --scan    # scan and classify (writes plan)
 python scripts/bootstrap.py --execute                     # run the full pipeline
 ```
 

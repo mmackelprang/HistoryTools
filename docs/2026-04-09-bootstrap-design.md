@@ -39,7 +39,7 @@ family-archive bootstrap /path/to/source --scan --dry-run
 1. Recursively walk the source directory (respecting `exclude_dirs` and `exclude_exts` from config)
 2. For each file, determine:
    - **File type** from extension
-   - **Category** from filename patterns (`classify_patterns` from taxonomy.json)
+   - **Category** from built-in filename and folder keyword patterns
    - **Folder hints** — source folder names like "Letters", "Photos", "Medical" boost classification confidence
    - **Date** extracted from filename if present (YYYYMMDD, YYYY-MM-DD, "Jan 2021" patterns)
    - **Proposed destination** folder and filename following naming conventions
@@ -57,7 +57,7 @@ family-archive bootstrap /path/to/source --scan --dry-run
 | `.mp4, .mov, .avi, .mkv, .wmv` | Video | Filename + folder hints | Copy → (future: transcribe) |
 | `.jpg, .jpeg, .png, .tiff, .bmp, .heic` | Photo | EXIF + folder hints | Copy → Catalog EXIF |
 | `.eml, .mbox, .pst` | Email archive | File type | Copy to `_imports/EmailArchives/` |
-| `.xml` (SMS backup) | SMS export | File type | Copy to `_imports/SMSExports/` |
+| `.xml` (SMS backup) | SMS export | File type | Copy to `_imports/SMSExports/` (future — currently routed to Unprocessed) |
 | `.gedcom, .ged` | Genealogy | File type | Copy to `_imports/` |
 | `.doc, .docx, .txt, .rtf` | Text document | Filename + folder hints | Copy → Classify like PDF |
 | `.xls, .xlsx, .csv` | Spreadsheet | None — requires user classification | Copy to `NeedsReview/` with log entry |
