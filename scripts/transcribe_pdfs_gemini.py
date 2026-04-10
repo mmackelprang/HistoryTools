@@ -252,6 +252,8 @@ def main():
     parser.add_argument("--file", default=None, help="Transcribe a single PDF file")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Gemini model (default: {DEFAULT_MODEL})")
     parser.add_argument("--force", action="store_true", help="Overwrite existing transcripts")
+    parser.add_argument("--low-confidence-only", action="store_true",
+                        help="Only transcribe PDFs with low-confidence existing transcripts")
     parser.add_argument("--dry-run", action="store_true", help="List files without transcribing")
     args = parser.parse_args()
 
@@ -271,24 +273,27 @@ def main():
 
     pdfs = collect_pdfs(dest_root, transcribe_folders, args.folder, args.file)
 
-    # Skip existing SUCCESSFUL transcripts unless --force
-    # Always retry error stubs (transcription_confidence: pending)
+    # Filter PDFs based on existing transcript state
     if not args.force:
         before = len(pdfs)
         filtered = []
         for p in pdfs:
             md = p.with_suffix(".transcript.md")
             if not md.exists():
-                filtered.append(p)  # no transcript yet
+                if not args.low_confidence_only:
+                    filtered.append(p)  # no transcript yet (skip in low-confidence mode)
             else:
                 content = md.read_text(encoding="utf-8", errors="replace")
                 if "transcription_confidence: pending" in content or "transcription failed" in content:
-                    filtered.append(p)  # error stub — retry
-                # else: successful transcript — skip
+                    filtered.append(p)  # error stub — always retry
+                elif args.low_confidence_only and "transcription_confidence: low" in content:
+                    filtered.append(p)  # low confidence — AI can do better
+                # else: medium/high confidence — skip
         pdfs = filtered
         skipped = before - len(pdfs)
         if skipped:
-            print(f"Skipping {skipped} files with successful transcripts (use --force to overwrite)")
+            mode = "low-confidence" if args.low_confidence_only else "successful"
+            print(f"Skipping {skipped} files (not {mode}, use --force to overwrite)")
 
     if not pdfs:
         print("No PDFs found to transcribe.")

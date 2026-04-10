@@ -656,17 +656,25 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_ove
     # Note: do NOT exit early if copied == 0 — downstream stages need to run
     # on previously-copied-but-unprocessed files (crash recovery scenario)
 
-    # Stage 2: Transcribe PDFs
+    # Stage 2: Transcribe PDFs (tiered: free first, then AI for low-confidence)
     if not skip_transcribe:
         has_pdfs = any(
             f["file_type"] == "document" and "transcribe" in f.get("processing", [])
             for f in plan["files"] if f.get("approved", True)
         )
         if has_pdfs:
+            # Stage 2a: Free transcription (native text extraction + Tesseract OCR)
             print(f"\n{'=' * 60}")
-            print("Stage 2: Transcribe PDFs")
+            print("Stage 2a: Transcribe PDFs (free -- native text + Tesseract OCR)")
             print(f"{'=' * 60}")
-            run_script("transcribe_pdfs_gemini.py", config_args)
+            run_script("transcribe_pdfs.py", config_args)
+
+            # Stage 2b: AI transcription only for low-confidence results
+            print(f"\n{'=' * 60}")
+            print("Stage 2b: Transcribe PDFs (AI -- low-confidence files only)")
+            print(f"{'=' * 60}")
+            gemini_args = config_args + ["--low-confidence-only"]
+            run_script("transcribe_pdfs_gemini.py", gemini_args)
 
     # Stage 3: Transcribe Audio
     if not skip_transcribe:
