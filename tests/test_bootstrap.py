@@ -639,6 +639,36 @@ class TestPrepareSource:
                 import shutil
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
+    def test_temp_base_creates_dir_under_specified_path(self, tmp_path):
+        zip_path = tmp_path / "source.zip"
+        make_zip(zip_path, {"doc.pdf": "pdf content"})
+        custom_base = tmp_path / "my_output"
+        custom_base.mkdir()
+
+        effective, temp_dir = prepare_source(zip_path, temp_base=str(custom_base))
+        try:
+            assert temp_dir is not None
+            assert "_historytools_temp" in temp_dir
+            assert str(custom_base) in temp_dir
+            assert (effective / "doc.pdf").exists()
+        finally:
+            if temp_dir and Path(temp_dir).exists():
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_temp_base_none_uses_system_default(self, tmp_path):
+        zip_path = tmp_path / "source.zip"
+        make_zip(zip_path, {"doc.pdf": "pdf content"})
+
+        effective, temp_dir = prepare_source(zip_path, temp_base=None)
+        try:
+            assert temp_dir is not None
+            assert "historytools" in temp_dir.lower() or "tmp" in temp_dir.lower() or "temp" in temp_dir.lower()
+        finally:
+            if temp_dir and Path(temp_dir).exists():
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 # ── scan_source() ─────────────────────────────────────────────────────────────
 
