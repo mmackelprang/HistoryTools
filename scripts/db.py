@@ -15,7 +15,7 @@ import hashlib
 from pathlib import Path
 
 # Schema version — bump when schema changes
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Date prefix pattern: YYYY-MM-DD_ at start of filename
 DATE_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_")
@@ -204,6 +204,42 @@ def init_schema(conn):
             file_id INTEGER REFERENCES files(id),
             path TEXT,
             body TEXT
+        );
+    """)
+
+    # Schema v2: provenance, fingerprints, quarantine
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS provenance (
+            id INTEGER PRIMARY KEY,
+            file_id INTEGER NOT NULL REFERENCES files(id),
+            parent_file_id INTEGER REFERENCES files(id),
+            source_path TEXT,
+            source_hash TEXT,
+            operation TEXT NOT NULL,
+            detail TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS fingerprints (
+            id INTEGER PRIMARY KEY,
+            file_id INTEGER NOT NULL REFERENCES files(id),
+            hash_type TEXT NOT NULL,
+            hash_value TEXT NOT NULL,
+            page_number INTEGER DEFAULT 1,
+            computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(file_id, hash_type, page_number)
+        );
+
+        CREATE TABLE IF NOT EXISTS quarantine (
+            id INTEGER PRIMARY KEY,
+            original_path TEXT NOT NULL,
+            quarantine_path TEXT NOT NULL,
+            duplicate_of TEXT,
+            reason TEXT,
+            quarantined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            purge_after TIMESTAMP NOT NULL,
+            file_hash TEXT,
+            file_size INTEGER
         );
     """)
 
