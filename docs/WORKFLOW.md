@@ -149,13 +149,33 @@ family-archive photos
 family-archive duplicates
 ```
 
-### 10. Generate Report
+### 10. Build Search Index
+
+```bash
+# Full rebuild of the search index
+family-archive reindex
+
+# Verify the index matches the filesystem
+family-archive reindex --check
+
+# Search across all transcripts
+family-archive search "Springfield"
+family-archive search "keyword" --folder Letters --year 1984
+
+# View archive statistics
+family-archive stats
+```
+
+The search index is a SQLite database (`.archive.db`) that indexes all files and
+transcript text. It's a rebuildable cache — delete and reindex anytime.
+
+### 11. Generate Report
 
 ```bash
 family-archive report
 ```
 
-### 11. Review AI Costs
+### 12. Review AI Costs
 
 After running AI-powered commands, review what you spent:
 
