@@ -13,7 +13,6 @@ import re
 import sqlite3
 import hashlib
 from pathlib import Path
-from datetime import datetime
 
 # Schema version — bump when schema changes
 SCHEMA_VERSION = 1
@@ -85,8 +84,16 @@ def _parse_folder_subfolder(rel_path_str):
     return folder, subfolder
 
 
+_MD5_SIZE_LIMIT = 50 * 1024 * 1024  # 50 MB — skip hashing large files (videos, etc.)
+
+
 def _file_md5(file_path):
-    """Compute MD5 hash of a file."""
+    """Compute MD5 hash of a file. Skips files larger than 50 MB."""
+    try:
+        if file_path.stat().st_size > _MD5_SIZE_LIMIT:
+            return None
+    except OSError:
+        return None
     h = hashlib.md5()
     try:
         with open(file_path, "rb") as f:
@@ -228,13 +235,14 @@ def close_db(conn):
 # ── Indexing ───────────────────────────────────────────────────────────────
 
 
-def index_file(conn, dest_root, file_path):
+def index_file(conn, dest_root, file_path, _commit=True):
     """Insert or update a single file in the files table.
 
     Args:
         conn: SQLite connection.
         dest_root: Archive root directory.
         file_path: Absolute or relative path to the file.
+        _commit: If True (default), commit after upsert. Set False for batch operations.
 
     Returns:
         The file's row id.
@@ -267,7 +275,8 @@ def index_file(conn, dest_root, file_path):
             md5_hash = excluded.md5_hash,
             indexed_at = excluded.indexed_at
     """, (rel, filename, folder, subfolder, file_type, size_bytes, date_prefix, md5))
-    conn.commit()
+    if _commit:
+        conn.commit()
 
     # Return the row id
     cursor = conn.execute("SELECT id FROM files WHERE path = ?", (rel,))
@@ -275,19 +284,22 @@ def index_file(conn, dest_root, file_path):
     return row["id"] if row else None
 
 
-def index_transcript(conn, dest_root, transcript_path):
+def index_transcript(conn, dest_root, transcript_path, _commit=True, _maintain_fts=True):
     """Parse a .transcript.md file and update transcripts + FTS tables.
 
     Args:
         conn: SQLite connection.
         dest_root: Archive root directory.
         transcript_path: Path to the .transcript.md file.
+        _commit: If True (default), commit after update. Set False for batch operations.
+        _maintain_fts: If True (default), maintain FTS index incrementally.
+            Set False during bulk reindex when a final FTS rebuild will follow.
     """
     transcript_path = Path(transcript_path)
     rel = _rel_path(dest_root, transcript_path)
 
     # Ensure the file is indexed in the files table first
-    file_id = index_file(conn, dest_root, transcript_path)
+    file_id = index_file(conn, dest_root, transcript_path, _commit=_commit)
     if file_id is None:
         return
 
@@ -318,48 +330,47 @@ def index_transcript(conn, dest_root, transcript_path):
         VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (file_id, None, confidence, method, word_count, formatting, transcription_date))
 
-    # Check if there's an existing FTS entry to delete first
+    # Update the backing table (transcripts_content) and optionally maintain FTS
     cursor = conn.execute(
         "SELECT rowid, path, body FROM transcripts_content WHERE file_id = ?", (file_id,)
     )
     old_row = cursor.fetchone()
     if old_row:
         old_rowid = old_row["rowid"]
-        old_path = old_row["path"] or ""
-        old_body = old_row["body"] or ""
-        # Delete old FTS entry using the old content values
-        conn.execute(
-            "INSERT INTO transcripts_fts(transcripts_fts, rowid, path, body) VALUES('delete', ?, ?, ?)",
-            (old_rowid, old_path, old_body)
-        )
-        # Update the backing table in place
+        if _maintain_fts:
+            old_path = old_row["path"] or ""
+            old_body = old_row["body"] or ""
+            conn.execute(
+                "INSERT INTO transcripts_fts(transcripts_fts, rowid, path, body) VALUES('delete', ?, ?, ?)",
+                (old_rowid, old_path, old_body)
+            )
         conn.execute(
             "UPDATE transcripts_content SET path = ?, body = ? WHERE rowid = ?",
             (rel, body, old_rowid)
         )
-        # Insert new FTS entry
-        conn.execute(
-            "INSERT INTO transcripts_fts(rowid, path, body) VALUES(?, ?, ?)",
-            (old_rowid, rel, body)
-        )
+        if _maintain_fts:
+            conn.execute(
+                "INSERT INTO transcripts_fts(rowid, path, body) VALUES(?, ?, ?)",
+                (old_rowid, rel, body)
+            )
     else:
-        # Insert new row into backing table
         conn.execute("""
             INSERT INTO transcripts_content (file_id, path, body)
             VALUES (?, ?, ?)
         """, (file_id, rel, body))
-        # Get the new rowid
-        cursor = conn.execute(
-            "SELECT rowid FROM transcripts_content WHERE file_id = ?", (file_id,)
-        )
-        new_row = cursor.fetchone()
-        if new_row:
-            conn.execute(
-                "INSERT INTO transcripts_fts(rowid, path, body) VALUES(?, ?, ?)",
-                (new_row["rowid"], rel, body)
+        if _maintain_fts:
+            cursor = conn.execute(
+                "SELECT rowid FROM transcripts_content WHERE file_id = ?", (file_id,)
             )
+            new_row = cursor.fetchone()
+            if new_row:
+                conn.execute(
+                    "INSERT INTO transcripts_fts(rowid, path, body) VALUES(?, ?, ?)",
+                    (new_row["rowid"], rel, body)
+                )
 
-    conn.commit()
+    if _commit:
+        conn.commit()
 
 
 def reindex_all(conn, dest_root):
@@ -397,17 +408,19 @@ def reindex_all(conn, dest_root):
     total_transcripts = len(transcript_files)
     print(f"Found {total_files} files, {total_transcripts} transcripts")
 
-    # Index all files
+    # Index all files (batch commit for performance)
     for i, fpath in enumerate(all_files, 1):
         if i % 200 == 0 or i == total_files:
             print(f"  Files: {i}/{total_files}")
-        index_file(conn, dest_root, fpath)
+        index_file(conn, dest_root, fpath, _commit=False)
+    conn.commit()
 
-    # Index all transcripts
+    # Index all transcripts (skip per-entry FTS — rebuilt at end)
     for i, tpath in enumerate(transcript_files, 1):
         if i % 50 == 0 or i == total_transcripts:
             print(f"  Transcripts: {i}/{total_transcripts}")
-        index_transcript(conn, dest_root, tpath)
+        index_transcript(conn, dest_root, tpath, _commit=False, _maintain_fts=False)
+    conn.commit()
 
     # Remove orphans — DB entries for files no longer on disk
     cursor = conn.execute("SELECT id, path FROM files")
@@ -545,9 +558,16 @@ def search(conn, query, folder=None, file_type=None, year=None, limit=10):
 
     try:
         cursor = conn.execute(sql, params)
-    except sqlite3.OperationalError:
-        # FTS query syntax error — return empty
-        return []
+    except sqlite3.OperationalError as exc:
+        # Only swallow FTS query-syntax errors; re-raise real DB problems
+        msg = str(exc).lower()
+        if any(marker in msg for marker in (
+            "fts5: syntax error",
+            "unterminated string",
+            "malformed match expression",
+        )):
+            return []
+        raise
 
     results = []
     for row in cursor.fetchall():

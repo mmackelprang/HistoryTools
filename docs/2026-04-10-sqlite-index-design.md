@@ -32,7 +32,7 @@ CREATE TABLE files (
     filename TEXT NOT NULL,
     folder TEXT NOT NULL,              -- top-level folder (Letters, Journals, etc.)
     subfolder TEXT,                    -- year or subfolder
-    file_type TEXT,                    -- pdf, mp3, jpg, etc.
+    file_type TEXT,                    -- normalized category: document, audio, photo, video, transcript, etc.
     size_bytes INTEGER,
     date_prefix TEXT,                  -- YYYY-MM-DD or "undated"
     md5_hash TEXT,
@@ -103,7 +103,7 @@ Found 3 results for "Springfield":
 
   1. Letters/1984/1984-03-15_letter-alice-bob.transcript.md
      "...we drove to Springfield last week and visited..."
-     (letter, 1984-03-15, 842 words)
+     (document, 1984-03-15, 842 words)
 
   2. AudioRecordings/CassetteTapes/1984-06-14_audio-tape.transcript.md
      "...when we went to Springfield that time..."
