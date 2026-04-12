@@ -11,8 +11,15 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-import imagehash
-from PIL import Image
+try:
+    import imagehash
+except ImportError:
+    imagehash = None
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 _CONFIDENCE_SCORES = {"high": 3, "medium": 2, "low": 1}
 
@@ -297,10 +304,12 @@ def compute_phash(file_path):
     Returns:
         A 16-character hex string representing the hash, or None on any error.
     """
+    if imagehash is None or Image is None:
+        return None
     try:
-        img = Image.open(str(file_path))
-        h = imagehash.phash(img)
-        return str(h)
+        with Image.open(str(file_path)) as img:
+            h = imagehash.phash(img)
+            return str(h)
     except Exception:
         return None
 

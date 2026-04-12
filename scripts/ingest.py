@@ -705,7 +705,12 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_ove
     print(f"\n{'=' * 60}")
     print("Stage 5: Detect Duplicates")
     print(f"{'=' * 60}")
-    run_script("cli.py", ["duplicates", "--scan"] + config_args)
+    # Run via module invocation since cli.py uses relative imports
+    import subprocess as _subprocess
+    _subprocess.run(
+        [sys.executable, "-m", "scripts.cli", "duplicates", "--scan"] + config_args,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
 
     # Stage 6: Format Transcripts
     if not skip_format:

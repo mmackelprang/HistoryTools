@@ -121,6 +121,10 @@ def cmd_duplicates(args):
     parser.add_argument("--threshold", type=float, default=0.90, help="Text similarity threshold")
     parsed = parser.parse_args(args)
 
+    if not any([parsed.scan, parsed.apply, parsed.status, parsed.restore, parsed.purge]):
+        parser.print_help()
+        return
+
     from .config import load_config
     from .db import get_db, close_db
 
@@ -170,9 +174,6 @@ def cmd_duplicates(args):
         elif parsed.purge:
             from .duplicate_manage import purge_expired
             purge_expired(conn, dest_root, purge_all=parsed.all)
-
-        else:
-            parser.print_help()
 
     finally:
         close_db(conn)
