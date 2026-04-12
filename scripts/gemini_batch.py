@@ -55,27 +55,28 @@ def submit_batch(client, model, pdf_path, dest_root, conn, dpi=200):
     import fitz
 
     doc = fitz.open(str(pdf_path))
-    page_count = len(doc)
+    try:
+        page_count = len(doc)
 
-    # Build inline requests — one per page
-    inline_requests = []
+        # Build inline requests — one per page
+        inline_requests = []
 
-    for page_num in range(page_count):
-        image_bytes = render_page_to_image(doc, page_num, dpi=dpi)
-        mime_type = "image/jpeg" if image_bytes[:2] == b'\xff\xd8' else "image/png"
-        b64_data = base64.b64encode(image_bytes).decode("ascii")
+        for page_num in range(page_count):
+            image_bytes = render_page_to_image(doc, page_num, dpi=dpi)
+            mime_type = "image/jpeg" if image_bytes[:2] == b'\xff\xd8' else "image/png"
+            b64_data = base64.b64encode(image_bytes).decode("ascii")
 
-        inline_requests.append({
-            "contents": [{
-                "parts": [
-                    {"text": TRANSCRIPTION_PROMPT},
-                    {"inline_data": {"mime_type": mime_type, "data": b64_data}},
-                ],
-                "role": "user",
-            }]
-        })
-
-    doc.close()
+            inline_requests.append({
+                "contents": [{
+                    "parts": [
+                        {"text": TRANSCRIPTION_PROMPT},
+                        {"inline_data": {"mime_type": mime_type, "data": b64_data}},
+                    ],
+                    "role": "user",
+                }]
+            })
+    finally:
+        doc.close()
 
     # Check total size — inline batch limited to 20MB
     total_size = sum(len(r["contents"][0]["parts"][1]["inline_data"]["data"]) for r in inline_requests)
@@ -211,8 +212,9 @@ def collect_results(client, conn, dest_root):
 
             # Extract page texts from inline responses
             page_texts = []
-            if job.dest and job.dest.inlined_responses:
-                for resp in job.dest.inlined_responses:
+            dest = getattr(job, "dest", None)
+            if dest and getattr(dest, "inlined_responses", None):
+                for resp in dest.inlined_responses:
                     if resp.error:
                         page_texts.append("[Page transcription failed]")
                     elif resp.response and resp.response.text:

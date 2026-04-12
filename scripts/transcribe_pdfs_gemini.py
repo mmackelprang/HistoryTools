@@ -514,6 +514,9 @@ def main():
         return
 
     # --fast mode: real-time with cross-PDF parallelism
+    # Note: each PDF uses up to 10 page-level threads internally, so total
+    # threads = parallel_workers * 10. The rate limiter ensures API calls
+    # stay within RPM regardless of thread count.
     from rate_limiter import RateLimiter
     rpm = config.get("requests_per_minute", 400)
     limiter = RateLimiter(requests_per_minute=rpm)
