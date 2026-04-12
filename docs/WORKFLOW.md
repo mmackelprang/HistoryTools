@@ -49,16 +49,29 @@ python scripts/transcribe_pdfs.py
 
 This handles all PDFs with embedded text and printed/typed scanned documents for free.
 
-**Step 2: AI for remaining low-confidence files (paid, for handwriting)**
+**Step 2: AI transcription (batch mode — 50% cheaper, default)**
 ```bash
-family-archive transcribe --low-confidence-only --dry-run   # preview what needs AI
-family-archive transcribe --low-confidence-only              # run AI on handwritten docs only
+family-archive transcribe                            # submit batch jobs (default)
+family-archive transcribe --folder Letters           # limit to one folder
+family-archive transcribe --low-confidence-only      # only low-confidence files
+family-archive transcribe --dry-run                  # preview, no API calls
+
+# Check status and collect results
+family-archive transcribe --status                   # see pending/completed jobs
+family-archive transcribe --collect                  # write transcripts from completed jobs
 ```
 
-**Or transcribe everything with AI (paid)**
+Batch mode submits PDFs to Gemini's batch endpoint at 50% cost. Jobs complete
+within 24 hours (usually much faster). Submit, check status, collect results.
+
+**Step 2 (alternative): Real-time AI transcription (immediate results)**
 ```bash
-family-archive transcribe --force        # AI transcription for all PDFs
+family-archive transcribe --fast                     # real-time, cross-PDF parallelism
+family-archive transcribe --fast --force             # overwrite existing transcripts
 ```
+
+Use `--fast` when you need results immediately. Costs 2x batch mode but returns
+results in minutes instead of hours.
 
 ### 3. Transcribe Audio
 
