@@ -6,13 +6,17 @@ quality scoring, and proposal file generation. This module is stateless — it r
 from the database and filesystem, runs comparisons, and returns duplicate groups.
 """
 
+import json
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 import imagehash
 from PIL import Image
 
 _PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".heic", ".webp"}
+
+_CONFIDENCE_SCORES = {"high": 3, "medium": 2, "low": 1}
 
 
 def _jaccard_similarity(text_a, text_b):
@@ -478,3 +482,195 @@ def find_perceptual_duplicates(conn, dest_root, max_distance=8, already_grouped_
         )
 
     return results
+
+
+def score_quality(files):
+    """Sort a list of file dicts by quality score, highest first.
+
+    Quality score = confidence_score + normalized_word_count * 2 + normalized_size_bytes * 1
+
+    Confidence scores: high=3, medium=2, low=1, anything else=0.
+    Normalization divides each value by the maximum value in the group (or 1 if max is 0).
+    Ties are broken by earliest indexed_at (earlier is better).
+
+    Args:
+        files: List of file dicts, each with keys: size_bytes, word_count, confidence,
+               indexed_at.
+
+    Returns:
+        The same list sorted by quality score descending.
+    """
+    max_words = max((f.get("word_count") or 0 for f in files), default=0) or 1
+    max_size = max((f.get("size_bytes") or 0 for f in files), default=0) or 1
+
+    def _score(f):
+        confidence = f.get("confidence") or ""
+        conf_score = _CONFIDENCE_SCORES.get(confidence, 0)
+        word_norm = (f.get("word_count") or 0) / max_words
+        size_norm = (f.get("size_bytes") or 0) / max_size
+        total = conf_score + word_norm * 2 + size_norm * 1
+        # For tie-breaking: earlier indexed_at is better (smaller string sorts first)
+        indexed_at = f.get("indexed_at") or ""
+        return (-total, indexed_at)
+
+    return sorted(files, key=_score)
+
+
+def _enrich_files_with_transcript_data(conn, files):
+    """Add word_count and confidence to each file dict from the transcripts table.
+
+    Queries the transcripts table using file_id. Files with no transcript row
+    receive word_count=0 and confidence=None.
+
+    Args:
+        conn: SQLite connection.
+        files: List of file dicts each containing at least a 'file_id' key.
+
+    Returns:
+        The enriched list (mutated in place, also returned).
+    """
+    for f in files:
+        row = conn.execute(
+            "SELECT word_count, confidence FROM transcripts WHERE file_id = ?",
+            (f["file_id"],),
+        ).fetchone()
+        if row:
+            f["word_count"] = row["word_count"] or 0
+            f["confidence"] = row["confidence"]
+        else:
+            f["word_count"] = 0
+            f["confidence"] = None
+    return files
+
+
+def generate_proposals(groups, dest_root):
+    """Write duplicate proposal files to dest_root.
+
+    Writes two files:
+    - _duplicate-proposals.json: machine-readable proposal data
+    - _duplicate-proposals.md: human-readable Markdown table
+
+    The "keep" recommendation is files[0] (highest quality after pre-sorting).
+
+    Args:
+        groups: List of group dicts from detection functions (already enriched/sorted).
+        dest_root: Path to the archive root directory.
+    """
+    dest_root = Path(dest_root)
+    generated = datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    json_groups = []
+    for i, group in enumerate(groups, start=1):
+        group_id = f"dup-{i:03d}"
+        files_out = []
+        for f in group["files"]:
+            files_out.append({
+                "path": f.get("path", ""),
+                "size_bytes": f.get("size_bytes", 0),
+                "word_count": f.get("word_count", 0),
+                "confidence": f.get("confidence"),
+                "ingested_at": f.get("indexed_at", ""),
+                "recommended": f is group["files"][0],
+            })
+        keep_path = group["files"][0].get("path", "") if group["files"] else ""
+        json_groups.append({
+            "id": group_id,
+            "match_type": group.get("match_type", ""),
+            "similarity": group.get("similarity", 0.0),
+            "files": files_out,
+            "keep": keep_path,
+            "approved": True,
+        })
+
+    payload = {"generated": generated, "groups": json_groups}
+    json_path = dest_root / "_duplicate-proposals.json"
+    json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    # Build Markdown
+    lines = [
+        "# Duplicate Proposals",
+        "",
+        f"Generated: {generated}",
+        f"Groups: {len(json_groups)}",
+        "",
+    ]
+    for jg in json_groups:
+        lines.append(f"## {jg['id']} — {jg['match_type']} (similarity: {jg['similarity']})")
+        lines.append("")
+        lines.append(f"**Keep:** `{jg['keep']}`")
+        lines.append("")
+        lines.append("| Path | Size (bytes) | Word Count | Confidence | Ingested At | Keep? |")
+        lines.append("|------|-------------|------------|------------|-------------|-------|")
+        for f in jg["files"]:
+            keep_marker = "YES" if f["recommended"] else ""
+            confidence = f["confidence"] or ""
+            lines.append(
+                f"| `{f['path']}` | {f['size_bytes']} | {f['word_count']} "
+                f"| {confidence} | {f['ingested_at']} | {keep_marker} |"
+            )
+        lines.append("")
+
+    md_path = dest_root / "_duplicate-proposals.md"
+    md_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def scan_duplicates(conn, dest_root, threshold=0.90, folder=None, scan_type=None):
+    """Orchestrate all duplicate detection strategies and return combined groups.
+
+    Runs strategies in order: exact -> text_similar -> perceptual. Tracks
+    grouped file IDs across strategies to avoid double-grouping.
+
+    Args:
+        conn: SQLite connection.
+        dest_root: Path to the archive root.
+        threshold: Jaccard similarity threshold for text similarity (default 0.90).
+        folder: Optional folder name to restrict results to files in that folder.
+        scan_type: None (run all), "exact" (exact only), or "similar" (text + perceptual).
+
+    Returns:
+        Combined list of group dicts, each enriched with word_count and confidence,
+        files sorted by quality score descending.
+    """
+    grouped_ids = set()
+    all_groups = []
+
+    run_exact = scan_type in (None, "exact")
+    run_similar = scan_type in (None, "similar")
+
+    if run_exact:
+        exact_groups = find_exact_duplicates(conn)
+        for group in exact_groups:
+            for f in group["files"]:
+                grouped_ids.add(f["file_id"])
+        all_groups.extend(exact_groups)
+
+    if run_similar:
+        text_groups = find_text_similar(conn, threshold=threshold, already_grouped_ids=grouped_ids)
+        for group in text_groups:
+            for f in group["files"]:
+                grouped_ids.add(f["file_id"])
+        all_groups.extend(text_groups)
+
+        perceptual_groups = find_perceptual_duplicates(
+            conn, dest_root, already_grouped_ids=grouped_ids
+        )
+        for group in perceptual_groups:
+            for f in group["files"]:
+                grouped_ids.add(f["file_id"])
+        all_groups.extend(perceptual_groups)
+
+    # Apply folder filter if specified
+    if folder:
+        filtered = []
+        for group in all_groups:
+            matching_files = [f for f in group["files"] if f.get("folder") == folder]
+            if len(matching_files) >= 2:
+                filtered.append({**group, "files": matching_files})
+        all_groups = filtered
+
+    # Enrich with transcript data and sort each group by quality
+    for group in all_groups:
+        _enrich_files_with_transcript_data(conn, group["files"])
+        group["files"] = score_quality(group["files"])
+
+    return all_groups

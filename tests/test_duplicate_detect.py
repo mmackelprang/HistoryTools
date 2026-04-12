@@ -2,10 +2,19 @@
 Tests for the duplicate detection module (scripts/duplicate_detect.py).
 """
 
+import json
 from pathlib import Path
 import pytest
 from scripts.db import get_db, close_db, index_file, index_transcript
-from scripts.duplicate_detect import find_exact_duplicates, find_text_similar, compute_phash, find_perceptual_duplicates
+from scripts.duplicate_detect import (
+    find_exact_duplicates,
+    find_text_similar,
+    compute_phash,
+    find_perceptual_duplicates,
+    score_quality,
+    generate_proposals,
+    scan_duplicates,
+)
 
 try:
     from PIL import Image
@@ -382,3 +391,119 @@ class TestPerceptualHash:
         assert row is not None
         assert isinstance(row["hash_value"], str)
         assert len(row["hash_value"]) == 16
+
+
+class TestQualityScoring:
+
+    def test_higher_confidence_scores_higher(self):
+        """A high-confidence file is sorted before a low-confidence file."""
+        files = [
+            {"size_bytes": 100, "word_count": 10, "confidence": "low", "indexed_at": "2024-01-01"},
+            {"size_bytes": 100, "word_count": 10, "confidence": "high", "indexed_at": "2024-01-01"},
+        ]
+        result = score_quality(files)
+        assert result[0]["confidence"] == "high"
+
+    def test_higher_word_count_scores_higher(self):
+        """When confidence is equal, a higher word_count wins."""
+        files = [
+            {"size_bytes": 100, "word_count": 5, "confidence": "medium", "indexed_at": "2024-01-01"},
+            {"size_bytes": 100, "word_count": 50, "confidence": "medium", "indexed_at": "2024-01-01"},
+        ]
+        result = score_quality(files)
+        assert result[0]["word_count"] == 50
+
+    def test_earlier_ingested_breaks_tie(self):
+        """When quality scores are identical, earlier indexed_at wins."""
+        files = [
+            {"size_bytes": 100, "word_count": 10, "confidence": "high", "indexed_at": "2024-06-01"},
+            {"size_bytes": 100, "word_count": 10, "confidence": "high", "indexed_at": "2024-01-01"},
+        ]
+        result = score_quality(files)
+        assert result[0]["indexed_at"] == "2024-01-01"
+
+
+class TestProposalGeneration:
+
+    def _make_group(self):
+        return {
+            "match_type": "exact",
+            "similarity": 1.0,
+            "files": [
+                {
+                    "file_id": 1,
+                    "path": "folder_a/doc.txt",
+                    "size_bytes": 200,
+                    "word_count": 20,
+                    "confidence": "high",
+                    "indexed_at": "2024-01-01T00:00:00",
+                },
+                {
+                    "file_id": 2,
+                    "path": "folder_b/doc.txt",
+                    "size_bytes": 200,
+                    "word_count": 20,
+                    "confidence": "low",
+                    "indexed_at": "2024-06-01T00:00:00",
+                },
+            ],
+        }
+
+    def test_generate_proposals_creates_files(self, tmp_path):
+        """generate_proposals writes both JSON and Markdown files."""
+        groups = [self._make_group()]
+        generate_proposals(groups, tmp_path)
+        assert (tmp_path / "_duplicate-proposals.json").exists()
+        assert (tmp_path / "_duplicate-proposals.md").exists()
+
+    def test_proposals_json_structure(self, tmp_path):
+        """The generated JSON has generated, groups, and each group has id, keep, approved, files."""
+        groups = [self._make_group()]
+        generate_proposals(groups, tmp_path)
+        data = json.loads((tmp_path / "_duplicate-proposals.json").read_text(encoding="utf-8"))
+        assert "generated" in data
+        assert "groups" in data
+        assert len(data["groups"]) == 1
+        group = data["groups"][0]
+        assert "id" in group
+        assert "keep" in group
+        assert "approved" in group
+        assert "files" in group
+        assert len(group["files"]) == 2
+
+
+class TestScanDuplicates:
+
+    def test_scan_runs_all_strategies(self, tmp_path):
+        """Two files with identical content produce at least one duplicate group."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        make_file(dest / "folder_a" / "copy1.txt", "identical content here")
+        make_file(dest / "folder_b" / "copy2.txt", "identical content here")
+
+        conn = get_db(dest)
+        index_file(conn, dest, dest / "folder_a" / "copy1.txt")
+        index_file(conn, dest, dest / "folder_b" / "copy2.txt")
+
+        groups = scan_duplicates(conn, dest)
+        close_db(conn)
+
+        assert len(groups) >= 1
+
+    def test_scan_no_duplicates(self, tmp_path):
+        """Two completely unique files return no groups."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        make_file(dest / "folder_a" / "alpha.txt", "unique content alpha 12345")
+        make_file(dest / "folder_b" / "beta.txt", "unique content beta 67890")
+
+        conn = get_db(dest)
+        index_file(conn, dest, dest / "folder_a" / "alpha.txt")
+        index_file(conn, dest, dest / "folder_b" / "beta.txt")
+
+        groups = scan_duplicates(conn, dest)
+        close_db(conn)
+
+        assert groups == []
