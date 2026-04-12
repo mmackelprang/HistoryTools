@@ -10,8 +10,6 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-TODAY = datetime.now().strftime("%Y-%m-%d")
-
 # ── Registry ──────────────────────────────────────────────────────────────
 
 EXTRACTORS = {}
@@ -58,14 +56,14 @@ def get_supported_extensions():
 # ── Transcript generation ─────────────────────────────────────────────────
 
 
-def create_extract_transcript(file_path, text, metadata, dest_root):
+def create_extract_transcript(file_path, text, metadata, dest_root=None):
     """Write a .transcript.md file for an extracted document.
 
     Args:
         file_path: Path to the source document.
         text: Extracted text body.
         metadata: Dict with word_count, format, and optional fields.
-        dest_root: Archive root directory.
+        dest_root: Unused (kept for API compatibility with pipeline callers).
 
     Returns:
         Path to the created .transcript.md file.
@@ -74,10 +72,11 @@ def create_extract_transcript(file_path, text, metadata, dest_root):
     md_path = file_path.with_suffix(".transcript.md")
     fmt = metadata.get("format", "unknown")
     word_count = metadata.get("word_count", len(text.split()))
+    today = datetime.now().strftime("%Y-%m-%d")
 
     content = f"""---
 source_file: {file_path.name}
-transcription_date: {TODAY}
+transcription_date: {today}
 transcription_confidence: high
 transcription_method: extract ({fmt})
 word_count: {word_count}

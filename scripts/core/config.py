@@ -7,7 +7,7 @@ Edit taxonomy.json to customize file classification rules.
 import json
 from pathlib import Path
 
-TOOLKIT_DIR = Path(__file__).resolve().parent.parent
+TOOLKIT_DIR = Path(__file__).resolve().parent.parent.parent
 # When installed as a package, TOOLKIT_DIR should be the current working directory
 # if no config.json is found at the parent level
 if not (TOOLKIT_DIR / "config.json").exists() and not (TOOLKIT_DIR / "config.example.json").exists():

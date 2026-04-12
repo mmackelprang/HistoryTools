@@ -2,4 +2,4 @@
 try:
     from .core.quality_check import *  # noqa: F401,F403
 except ImportError:
-    from scripts.core.quality_check import *  # noqa: F401,F403
+    from core.quality_check import *  # noqa: F401,F403
