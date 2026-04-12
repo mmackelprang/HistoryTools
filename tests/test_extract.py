@@ -240,3 +240,65 @@ class TestXlsExtractor:
         assert "Alice" in text
         assert "Springfield" in text
         assert metadata["sheet_count"] == 2
+
+
+class TestExtractPipeline:
+    """Test the extract_docs pipeline."""
+
+    def test_extract_creates_transcripts(self, tmp_path):
+        from scripts.extract_docs import run_extraction
+        from docx import Document
+
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        doc = Document()
+        doc.add_paragraph("Hello from the test document.")
+        docx_path = dest / "NeedsReview" / "letter.docx"
+        docx_path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(docx_path))
+
+        results = run_extraction(dest, folder="NeedsReview")
+
+        assert len(results) == 1
+        assert results[0]["status"] == "ok"
+        transcript = docx_path.with_suffix(".transcript.md")
+        assert transcript.exists()
+        content = transcript.read_text(encoding="utf-8")
+        assert "Hello from the test document" in content
+
+    def test_extract_skips_existing_transcripts(self, tmp_path):
+        from scripts.extract_docs import run_extraction
+        from docx import Document
+
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        doc = Document()
+        doc.add_paragraph("Content")
+        docx_path = dest / "letter.docx"
+        doc.save(str(docx_path))
+
+        docx_path.with_suffix(".transcript.md").write_text("existing", encoding="utf-8")
+
+        results = run_extraction(dest)
+        assert len(results) == 0
+
+    def test_extract_force_overwrites(self, tmp_path):
+        from scripts.extract_docs import run_extraction
+        from docx import Document
+
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        doc = Document()
+        doc.add_paragraph("New content")
+        docx_path = dest / "letter.docx"
+        doc.save(str(docx_path))
+
+        docx_path.with_suffix(".transcript.md").write_text("old", encoding="utf-8")
+
+        results = run_extraction(dest, force=True)
+        assert len(results) == 1
+        content = docx_path.with_suffix(".transcript.md").read_text(encoding="utf-8")
+        assert "New content" in content
