@@ -241,6 +241,11 @@ def init_schema(conn):
             file_hash TEXT,
             file_size INTEGER
         );
+
+        CREATE INDEX IF NOT EXISTS idx_provenance_source_hash
+            ON provenance(source_hash);
+        CREATE INDEX IF NOT EXISTS idx_provenance_parent
+            ON provenance(parent_file_id);
     """)
 
     # Create FTS5 table if it doesn't exist

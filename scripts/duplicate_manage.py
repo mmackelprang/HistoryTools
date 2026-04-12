@@ -119,6 +119,12 @@ def apply_quarantine(conn, dest_root, dry_run=False):
                         file_size,
                     ),
                 )
+                # Update files table path to reflect quarantine location
+                conn.execute(
+                    "UPDATE files SET path = ? WHERE path = ?",
+                    (quarantine_rel, file_rel),
+                )
+
                 conn.commit()
                 quarantined += 1
 
@@ -167,6 +173,13 @@ def restore_file(conn, dest_root, quarantine_path):
     # Restore the main file
     original_abs.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(quarantine_abs), str(original_abs))
+
+    # Update files table path back to original
+    conn.execute(
+        "UPDATE files SET path = ? WHERE path = ?",
+        (original_path, q_path),
+    )
+
     print(f"Restored: {q_path} -> {original_path}")
 
     # Restore associated transcript if it exists in quarantine

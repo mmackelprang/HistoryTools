@@ -14,8 +14,6 @@ from pathlib import Path
 import imagehash
 from PIL import Image
 
-_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".heic", ".webp"}
-
 _CONFIDENCE_SCORES = {"high": 3, "medium": 2, "low": 1}
 
 
@@ -430,9 +428,6 @@ def find_perceptual_duplicates(conn, dest_root, max_distance=8, already_grouped_
     def union(x, y):
         parent[find(x)] = find(y)
 
-    # Track max distance within each eventual group for similarity computation
-    pair_distances = {}
-
     for i in range(n):
         for j in range(i + 1, n):
             fid_i = candidates[i]["file_id"]
@@ -445,8 +440,6 @@ def find_perceptual_duplicates(conn, dest_root, max_distance=8, already_grouped_
             dist = _hamming_distance(phashes.get(fid_i), phashes.get(fid_j))
             if dist <= max_distance:
                 union(i, j)
-                key = (find(i), find(j))
-                pair_distances[key] = max(pair_distances.get(key, 0), dist)
 
     # Collect groups by root
     groups_by_root = defaultdict(list)

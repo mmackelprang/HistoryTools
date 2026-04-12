@@ -31,7 +31,7 @@ STEPS = [
     ("format",      "format_transcripts.py",  "Formatting transcripts with AI"),
     ("propose",     "propose_renames.py",     "Proposing file renames"),
     ("photos",      "catalog_photos.py",   "Cataloging photos"),
-    ("duplicates",  "duplicate_detect.py", "Detecting duplicates"),
+    ("duplicates",  "cli.py",              "Detecting duplicates"),
     ("report",      "generate_report.py",  "Generating report"),
 ]
 
@@ -64,6 +64,8 @@ def main():
         for name, script, desc in STEPS:
             if name == args.step:
                 step_args = extra.copy()
+                if name == "duplicates":
+                    step_args = ["duplicates", "--scan"] + step_args
                 if args.dry_run and name == "organize":
                     step_args.append("--dry-run")
                 run_script(script, step_args)
@@ -82,6 +84,8 @@ def main():
             continue
 
         step_args = extra.copy()
+        if name == "duplicates":
+            step_args = ["duplicates", "--scan"] + step_args
         if args.dry_run:
             if name == "organize":
                 step_args.append("--dry-run")
