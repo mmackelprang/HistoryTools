@@ -383,7 +383,8 @@ def main():
 
     # Handle --status (no PDF collection needed)
     if args.status:
-        load_env()
+        if not load_env():
+            sys.exit(1)
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             print("ERROR: GEMINI_API_KEY not set in .env file.")
@@ -393,12 +394,15 @@ def main():
         from gemini_batch import check_status
         from db import get_db, close_db
         conn = get_db(dest_root)
-        check_status(client, conn)
-        close_db(conn)
+        try:
+            check_status(client, conn)
+        finally:
+            close_db(conn)
         return
 
     if args.collect:
-        load_env()
+        if not load_env():
+            sys.exit(1)
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             print("ERROR: GEMINI_API_KEY not set in .env file.")
@@ -408,8 +412,10 @@ def main():
         from gemini_batch import collect_results
         from db import get_db, close_db
         conn = get_db(dest_root)
-        collect_results(client, conn, dest_root)
-        close_db(conn)
+        try:
+            collect_results(client, conn, dest_root)
+        finally:
+            close_db(conn)
         return
 
     # Load environment and config
@@ -462,10 +468,15 @@ def main():
 
     print(f"Found {len(pdfs)} PDFs ({total_pages} total pages) to transcribe")
     print(f"Model: {args.model}")
-    est_cost = total_pages * 0.0003  # rough estimate for Flash
+    per_page = 0.0003  # rough estimate for Flash
     if "pro" in args.model.lower():
-        est_cost = total_pages * 0.003
-    print(f"Estimated cost: ${est_cost:.2f}")
+        per_page = 0.003
+    est_cost = total_pages * per_page
+    if not args.fast:
+        est_cost *= 0.5  # batch mode = 50% discount
+        print(f"Estimated cost: ${est_cost:.2f} (batch mode, 50% discount)")
+    else:
+        print(f"Estimated cost: ${est_cost:.2f} (real-time mode)")
 
     if args.dry_run:
         print("\n--- DRY RUN (no API calls) ---")
@@ -487,17 +498,19 @@ def main():
         from gemini_batch import submit_batch
         from db import get_db, close_db
         conn = get_db(dest_root)
-        print(f"\nSubmitting {len(pdfs)} PDFs for batch transcription...")
-        print(f"Model: {args.model} (50% batch discount)")
-        submitted = 0
-        for pdf in pdfs:
-            result = submit_batch(client, args.model, pdf, dest_root, conn, dpi=args.dpi)
-            if result:
-                submitted += 1
-        close_db(conn)
-        print(f"\nSubmitted {submitted} batch jobs.")
-        print("Check status:    family-archive transcribe --status")
-        print("Collect results: family-archive transcribe --collect")
+        try:
+            print(f"\nSubmitting {len(pdfs)} PDFs for batch transcription...")
+            print(f"Model: {args.model} (50% batch discount)")
+            submitted = 0
+            for pdf in pdfs:
+                result = submit_batch(client, args.model, pdf, dest_root, conn, dpi=args.dpi)
+                if result:
+                    submitted += 1
+            print(f"\nSubmitted {submitted} batch jobs.")
+            print("Check status:    family-archive transcribe --status")
+            print("Collect results: family-archive transcribe --collect")
+        finally:
+            close_db(conn)
         return
 
     # --fast mode: real-time with cross-PDF parallelism

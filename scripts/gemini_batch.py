@@ -6,10 +6,8 @@ One batch job per PDF. Results are collected asynchronously via --collect.
 """
 
 import base64
-import json
 import sys
 from pathlib import Path
-from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -78,6 +76,13 @@ def submit_batch(client, model, pdf_path, dest_root, conn, dpi=200):
         })
 
     doc.close()
+
+    # Check total size — inline batch limited to 20MB
+    total_size = sum(len(r["contents"][0]["parts"][1]["inline_data"]["data"]) for r in inline_requests)
+    if total_size > 20 * 1024 * 1024:
+        print(f"  WARNING: {rel} is {total_size / 1024 / 1024:.1f}MB — exceeds 20MB inline limit.")
+        print(f"  File-based batch upload not yet implemented. Use --fast for this file.")
+        return None
 
     # Submit batch
     batch_job = client.batches.create(

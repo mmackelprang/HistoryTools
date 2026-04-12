@@ -4,7 +4,6 @@ Tests for the Gemini batch processing module (scripts/gemini_batch.py).
 All tests mock the Gemini API — no real API calls are made.
 """
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
