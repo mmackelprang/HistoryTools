@@ -142,14 +142,43 @@ family-archive detect-dates              # propose dates
 family-archive detect-dates --apply      # apply approved dates
 ```
 
-### 9. Catalog Photos and Detect Duplicates
+### 9. Detect and Manage Duplicates
+
+```bash
+# Scan for duplicates (exact MD5, text similarity, perceptual hash)
+family-archive duplicates --scan
+family-archive duplicates --scan --dry-run           # preview only
+family-archive duplicates --scan --type exact         # only exact matches
+family-archive duplicates --scan --folder Letters     # limit to folder
+
+# Review _duplicate-proposals.md, edit _duplicate-proposals.json if needed
+
+# Quarantine approved duplicates (moves to _duplicates/)
+family-archive duplicates --apply
+family-archive duplicates --apply --dry-run
+
+# Check quarantine status
+family-archive duplicates --status
+
+# Restore a quarantined file
+family-archive duplicates --restore _duplicates/Letters/letter.pdf
+
+# Purge quarantined files past 14-day TTL
+family-archive duplicates --purge
+family-archive duplicates --purge --all              # purge regardless of TTL
+```
+
+Duplicates are quarantined to `_duplicates/` for 14 days before permanent deletion.
+Files related by provenance (e.g., split from the same compilation PDF) are excluded
+from duplicate detection.
+
+### 10. Catalog Photos
 
 ```bash
 family-archive photos
-family-archive duplicates
 ```
 
-### 10. Build Search Index
+### 11. Build Search Index
 
 ```bash
 # Full rebuild of the search index
@@ -169,13 +198,13 @@ family-archive stats
 The search index is a SQLite database (`.archive.db`) that indexes all files and
 transcript text. It's a rebuildable cache — delete and reindex anytime.
 
-### 11. Generate Report
+### 12. Generate Report
 
 ```bash
 family-archive report
 ```
 
-### 12. Review AI Costs
+### 13. Review AI Costs
 
 After running AI-powered commands, review what you spent:
 

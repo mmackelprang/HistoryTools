@@ -31,7 +31,7 @@ STEPS = [
     ("format",      "format_transcripts.py",  "Formatting transcripts with AI"),
     ("propose",     "propose_renames.py",     "Proposing file renames"),
     ("photos",      "catalog_photos.py",   "Cataloging photos"),
-    ("duplicates",  "handle_duplicates.py","Detecting duplicates"),
+    ("duplicates",  "duplicate_detect.py", "Detecting duplicates"),
     ("report",      "generate_report.py",  "Generating report"),
 ]
 
