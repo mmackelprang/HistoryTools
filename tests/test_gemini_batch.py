@@ -46,15 +46,17 @@ class TestSubmitBatch:
         mock_batch_job.name = "batches/batch-test-123"
         mock_client.batches.create.return_value = mock_batch_job
 
-        batch_id = submit_batch(mock_client, "gemini-2.5-flash", pdf, dest, conn)
+        batch_ids = submit_batch(mock_client, "gemini-2.5-flash", pdf, dest, conn)
 
-        assert batch_id == "batches/batch-test-123"
-        cursor = conn.execute("SELECT * FROM batches WHERE batch_id = ?", (batch_id,))
+        assert batch_ids == ["batches/batch-test-123"]
+        cursor = conn.execute("SELECT * FROM batches WHERE batch_id = ?", (batch_ids[0],))
         row = cursor.fetchone()
         assert row is not None
         assert row["pdf_path"] == "Letters/letter.pdf"
         assert row["status"] == "submitted"
         assert row["page_count"] == 2
+        assert row["page_start"] == 0
+        assert row["chunk_pages"] == 2
         close_db(conn)
 
     def test_submit_calls_gemini_api(self, tmp_path):
@@ -244,6 +246,154 @@ class TestCollectResults:
         close_db(conn)
 
 
+class TestChunking:
+    """Test automatic chunking of large PDFs."""
+
+    def test_small_pdf_single_chunk(self, tmp_path):
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        pdf = make_test_pdf(dest / "letter.pdf", pages=2)
+        conn = get_db(dest)
+
+        mock_client = MagicMock()
+        mock_job = MagicMock()
+        mock_job.name = "batches/single"
+        mock_client.batches.create.return_value = mock_job
+
+        batch_ids = submit_batch(mock_client, "gemini-2.5-flash", pdf, dest, conn)
+
+        assert len(batch_ids) == 1
+        mock_client.batches.create.assert_called_once()
+        close_db(conn)
+
+    @patch("scripts.gemini_batch._CHUNK_SIZE_LIMIT", 500)
+    def test_large_pdf_multiple_chunks(self, tmp_path):
+        """With a tiny chunk limit, even small pages should split into chunks."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        pdf = make_test_pdf(dest / "letter.pdf", pages=5)
+        conn = get_db(dest)
+
+        mock_client = MagicMock()
+        call_count = 0
+
+        def mock_create(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            job = MagicMock()
+            job.name = f"batches/chunk-{call_count}"
+            return job
+
+        mock_client.batches.create.side_effect = mock_create
+
+        batch_ids = submit_batch(mock_client, "gemini-2.5-flash", pdf, dest, conn)
+
+        assert len(batch_ids) > 1  # should be split into multiple chunks
+        assert mock_client.batches.create.call_count == len(batch_ids)
+
+        # Verify all chunks are in the DB with correct page_start values
+        cursor = conn.execute(
+            "SELECT page_start, chunk_pages FROM batches WHERE pdf_path = ? ORDER BY page_start",
+            ("letter.pdf",)
+        )
+        rows = cursor.fetchall()
+        assert len(rows) == len(batch_ids)
+        assert rows[0]["page_start"] == 0  # first chunk starts at 0
+        # All chunks should cover all 5 pages
+        total_chunk_pages = sum(r["chunk_pages"] for r in rows)
+        assert total_chunk_pages == 5
+        close_db(conn)
+
+    @patch("scripts.gemini_batch._CHUNK_SIZE_LIMIT", 500)
+    def test_collect_multi_chunk_reassembles_pages(self, tmp_path):
+        """Test that collect_results reassembles pages from multiple chunks."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        make_test_pdf(dest / "letter.pdf", pages=4)
+        conn = get_db(dest)
+
+        # Simulate two chunks: pages 0-1 and pages 2-3
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count, page_start, chunk_pages, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'succeeded')
+        """, ("batches/c1", "letter.pdf", "gemini-2.5-flash", 4, 0, 2))
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count, page_start, chunk_pages, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'succeeded')
+        """, ("batches/c2", "letter.pdf", "gemini-2.5-flash", 4, 2, 2))
+        conn.commit()
+
+        mock_client = MagicMock()
+
+        def mock_get(name):
+            job = MagicMock()
+            if name == "batches/c1":
+                r1 = MagicMock()
+                r1.response.text = "Page one text"
+                r1.error = None
+                r2 = MagicMock()
+                r2.response.text = "Page two text"
+                r2.error = None
+                job.dest.inlined_responses = [r1, r2]
+            elif name == "batches/c2":
+                r3 = MagicMock()
+                r3.response.text = "Page three text"
+                r3.error = None
+                r4 = MagicMock()
+                r4.response.text = "Page four text"
+                r4.error = None
+                job.dest.inlined_responses = [r3, r4]
+            return job
+
+        mock_client.batches.get.side_effect = mock_get
+
+        count = collect_results(mock_client, conn, dest)
+        assert count == 1
+
+        transcript = dest / "letter.transcript.md"
+        assert transcript.exists()
+        content = transcript.read_text(encoding="utf-8")
+        # Verify all pages are present in order
+        assert "Page one text" in content
+        assert "Page two text" in content
+        assert "Page three text" in content
+        assert "Page four text" in content
+        # Verify page ordering (page one before page four)
+        assert content.index("Page one") < content.index("Page four")
+
+        # Both chunks marked as collected
+        cursor = conn.execute("SELECT status FROM batches WHERE pdf_path = 'letter.pdf'")
+        for row in cursor.fetchall():
+            assert row["status"] == "collected"
+        close_db(conn)
+
+    @patch("scripts.gemini_batch._CHUNK_SIZE_LIMIT", 500)
+    def test_collect_waits_for_all_chunks(self, tmp_path):
+        """Don't collect until all chunks have succeeded."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        make_test_pdf(dest / "letter.pdf", pages=4)
+        conn = get_db(dest)
+
+        # Chunk 1 succeeded, chunk 2 still submitted
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count, page_start, chunk_pages, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'succeeded')
+        """, ("batches/c1", "letter.pdf", "gemini-2.5-flash", 4, 0, 2))
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count, page_start, chunk_pages, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'submitted')
+        """, ("batches/c2", "letter.pdf", "gemini-2.5-flash", 4, 2, 2))
+        conn.commit()
+
+        mock_client = MagicMock()
+        count = collect_results(mock_client, conn, dest)
+
+        assert count == 0  # should not collect — chunk 2 still pending
+        assert not (dest / "letter.transcript.md").exists()
+        close_db(conn)
+
+
 class TestEndToEnd:
     """End-to-end integration test for the batch workflow."""
 
@@ -260,8 +410,9 @@ class TestEndToEnd:
         mock_batch_job.name = "batches/test-e2e"
         mock_client.batches.create.return_value = mock_batch_job
 
-        batch_id = submit_batch(mock_client, "gemini-2.5-flash", pdf, dest, conn)
-        assert batch_id == "batches/test-e2e"
+        batch_ids = submit_batch(mock_client, "gemini-2.5-flash", pdf, dest, conn)
+        assert batch_ids == ["batches/test-e2e"]
+        batch_id = batch_ids[0]
 
         # Verify submitted in DB
         cursor = conn.execute("SELECT status FROM batches WHERE batch_id = ?", (batch_id,))

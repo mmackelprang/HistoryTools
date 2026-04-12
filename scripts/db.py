@@ -248,6 +248,8 @@ def init_schema(conn):
             pdf_path TEXT NOT NULL,
             model TEXT NOT NULL,
             page_count INTEGER NOT NULL,
+            page_start INTEGER NOT NULL DEFAULT 0,
+            chunk_pages INTEGER,
             status TEXT NOT NULL DEFAULT 'submitted',
             submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMP,
@@ -260,6 +262,15 @@ def init_schema(conn):
         CREATE INDEX IF NOT EXISTS idx_provenance_parent
             ON provenance(parent_file_id);
     """)
+
+    # Migrate batches table if missing chunking columns (added after initial release)
+    cursor = conn.execute("PRAGMA table_info(batches)")
+    batch_cols = {row[1] for row in cursor.fetchall()}
+    if "batches" in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}:
+        if "page_start" not in batch_cols:
+            conn.execute("ALTER TABLE batches ADD COLUMN page_start INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE batches ADD COLUMN chunk_pages INTEGER")
+            conn.commit()
 
     # Create FTS5 table if it doesn't exist
     # Check if it already exists first to avoid error
