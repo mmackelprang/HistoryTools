@@ -203,6 +203,8 @@ DEFAULT_CONFIG = {
     "skip_existing_transcripts": True,
     "custom_categories": {},     # filename pattern -> (category, subfolder) overrides
     "db_path": None,             # optional: path to .archive.db (default: dest_root/.archive.db)
+    "requests_per_minute": 400,  # API rate limit (Gemini paid tier allows 2000)
+    "parallel_workers": 10,      # concurrent PDFs in --fast mode
 }
 
 def load_config(config_path=None):

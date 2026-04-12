@@ -30,7 +30,6 @@ from config import load_config, load_env
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 DEFAULT_MODEL = "gemini-2.5-flash"
-REQUESTS_PER_MINUTE = 200  # paid tier allows 2000 RPM; 200 is conservative
 
 TRANSCRIPTION_PROMPT = """You are a precise document transcriber. Transcribe this page EXACTLY as written, word for word.
 
