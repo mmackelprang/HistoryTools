@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from scripts.db import get_db, close_db
-from scripts.gemini_batch import submit_batch
+from scripts.gemini_batch import submit_batch, check_status
 
 
 def make_file(path: Path, content: str = "test content") -> Path:
@@ -94,4 +94,76 @@ class TestSubmitBatch:
 
         assert result is None  # skipped
         mock_client.batches.create.assert_not_called()
+        close_db(conn)
+
+
+class TestCheckStatus:
+    """Test batch job status checking."""
+
+    def _insert_batch(self, conn, batch_id, pdf_path, status="submitted"):
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count, status)
+            VALUES (?, ?, ?, ?, ?)
+        """, (batch_id, pdf_path, "gemini-2.5-flash", 3, status))
+        conn.commit()
+
+    def test_updates_succeeded_status(self, tmp_path):
+        conn = get_db(tmp_path)
+        self._insert_batch(conn, "batches/b1", "letter.pdf")
+
+        mock_client = MagicMock()
+        mock_job = MagicMock()
+        mock_job.state.name = "JOB_STATE_SUCCEEDED"
+        mock_client.batches.get.return_value = mock_job
+
+        counts = check_status(mock_client, conn)
+
+        cursor = conn.execute("SELECT status FROM batches WHERE batch_id = ?", ("batches/b1",))
+        assert cursor.fetchone()["status"] == "succeeded"
+        assert counts["succeeded"] == 1
+        close_db(conn)
+
+    def test_updates_failed_status(self, tmp_path):
+        conn = get_db(tmp_path)
+        self._insert_batch(conn, "batches/b2", "letter.pdf")
+
+        mock_client = MagicMock()
+        mock_job = MagicMock()
+        mock_job.state.name = "JOB_STATE_FAILED"
+        mock_job.error = MagicMock(message="Rate limit exceeded")
+        mock_client.batches.get.return_value = mock_job
+
+        counts = check_status(mock_client, conn)
+
+        cursor = conn.execute("SELECT status, error_message FROM batches WHERE batch_id = ?", ("batches/b2",))
+        row = cursor.fetchone()
+        assert row["status"] == "failed"
+        assert "Rate limit" in row["error_message"]
+        assert counts["failed"] == 1
+        close_db(conn)
+
+    def test_leaves_pending_as_submitted(self, tmp_path):
+        conn = get_db(tmp_path)
+        self._insert_batch(conn, "batches/b3", "letter.pdf")
+
+        mock_client = MagicMock()
+        mock_job = MagicMock()
+        mock_job.state.name = "JOB_STATE_RUNNING"
+        mock_client.batches.get.return_value = mock_job
+
+        counts = check_status(mock_client, conn)
+
+        cursor = conn.execute("SELECT status FROM batches WHERE batch_id = ?", ("batches/b3",))
+        assert cursor.fetchone()["status"] == "submitted"
+        assert counts["pending"] == 1
+        close_db(conn)
+
+    def test_skips_already_collected(self, tmp_path):
+        conn = get_db(tmp_path)
+        self._insert_batch(conn, "batches/b4", "letter.pdf", status="collected")
+
+        mock_client = MagicMock()
+        counts = check_status(mock_client, conn)
+
+        mock_client.batches.get.assert_not_called()
         close_db(conn)

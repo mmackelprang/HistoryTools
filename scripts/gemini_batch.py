@@ -97,3 +97,69 @@ def submit_batch(client, model, pdf_path, dest_root, conn, dpi=200):
 
     print(f"  Submitted: {rel} ({page_count} pages) -> {batch_id}")
     return batch_id
+
+
+# Gemini job state -> our status mapping
+_STATE_MAP = {
+    "JOB_STATE_SUCCEEDED": "succeeded",
+    "JOB_STATE_FAILED": "failed",
+    "JOB_STATE_EXPIRED": "expired",
+    "JOB_STATE_CANCELLED": "cancelled",
+}
+
+
+def check_status(client, conn):
+    """Check status of all pending batch jobs.
+
+    Queries the batches table for submitted jobs, checks each with the
+    Gemini API, and updates status in SQLite.
+
+    Args:
+        client: google.genai.Client instance.
+        conn: SQLite connection.
+
+    Returns:
+        Dict with counts: {"pending": int, "succeeded": int, "failed": int, "expired": int}
+    """
+    cursor = conn.execute(
+        "SELECT batch_id, pdf_path FROM batches WHERE status = 'submitted'"
+    )
+    pending_batches = cursor.fetchall()
+
+    counts = {"pending": 0, "succeeded": 0, "failed": 0, "expired": 0, "cancelled": 0}
+
+    for row in pending_batches:
+        batch_id = row["batch_id"]
+        pdf_path = row["pdf_path"]
+
+        try:
+            job = client.batches.get(name=batch_id)
+            state_name = job.state.name
+            new_status = _STATE_MAP.get(state_name)
+
+            if new_status:
+                error_msg = None
+                if new_status == "failed" and hasattr(job, "error") and job.error:
+                    error_msg = str(getattr(job.error, "message", job.error))
+
+                conn.execute("""
+                    UPDATE batches SET status = ?, completed_at = CURRENT_TIMESTAMP, error_message = ?
+                    WHERE batch_id = ?
+                """, (new_status, error_msg, batch_id))
+                conn.commit()
+                counts[new_status] = counts.get(new_status, 0) + 1
+                print(f"  {pdf_path}: {new_status}")
+            else:
+                counts["pending"] += 1
+                print(f"  {pdf_path}: pending ({state_name})")
+
+        except Exception as e:
+            print(f"  {pdf_path}: error checking status ({e})")
+            counts["pending"] += 1
+
+    total = sum(counts.values())
+    print(f"\nBatch status: {total} jobs — "
+          f"{counts['pending']} pending, {counts['succeeded']} succeeded, "
+          f"{counts['failed']} failed")
+
+    return counts
