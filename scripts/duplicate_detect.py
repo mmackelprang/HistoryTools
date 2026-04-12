@@ -6,7 +6,149 @@ quality scoring, and proposal file generation. This module is stateless — it r
 from the database and filesystem, runs comparisons, and returns duplicate groups.
 """
 
+from collections import defaultdict
 from pathlib import Path
+
+
+def _jaccard_similarity(text_a, text_b):
+    """Compute token-level Jaccard similarity between two strings.
+
+    Tokens are whitespace-split, lowercased words converted to sets.
+    Returns len(intersection) / len(union), or 0.0 if either set is empty.
+    """
+    set_a = set(text_a.lower().split())
+    set_b = set(text_b.lower().split())
+    if not set_a or not set_b:
+        return 0.0
+    return len(set_a & set_b) / len(set_a | set_b)
+
+
+def find_text_similar(conn, threshold=0.90, already_grouped_ids=None):
+    """Find files whose transcript bodies are textually similar via Jaccard similarity.
+
+    Args:
+        conn: SQLite connection.
+        threshold: Minimum Jaccard similarity to consider a match (default 0.90).
+        already_grouped_ids: Optional set of file_ids to skip (e.g. already grouped
+            by exact match).
+
+    Returns a list of groups, each a dict:
+        {
+            "match_type": "text_similar",
+            "similarity": <min pairwise sim among files in the group>,
+            "files": [
+                {
+                    "file_id": int,
+                    "path": str,
+                    "filename": str,
+                    "folder": str,
+                    "file_type": str,
+                    "size_bytes": int,
+                    "date_prefix": str or None,
+                    "indexed_at": str,
+                },
+                ...
+            ]
+        }
+    """
+    skip_ids = already_grouped_ids or set()
+    provenance_relations = _get_provenance_relations(conn)
+
+    # Load all transcript bodies joined with file metadata
+    cursor = conn.execute(
+        """
+        SELECT f.id AS file_id, f.path, f.filename, f.folder, f.file_type,
+               f.size_bytes, f.date_prefix, f.indexed_at,
+               tc.body
+        FROM transcripts_content tc
+        JOIN files f ON f.id = tc.file_id
+        WHERE tc.body IS NOT NULL AND tc.body != ''
+        """
+    )
+    rows = cursor.fetchall()
+
+    # Filter out already-grouped files
+    candidates = [
+        {
+            "file_id": row["file_id"],
+            "path": row["path"],
+            "filename": row["filename"],
+            "folder": row["folder"],
+            "file_type": row["file_type"],
+            "size_bytes": row["size_bytes"],
+            "date_prefix": row["date_prefix"],
+            "indexed_at": row["indexed_at"],
+            "body": row["body"],
+        }
+        for row in rows
+        if row["file_id"] not in skip_ids
+    ]
+
+    n = len(candidates)
+
+    # Union-find data structure
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(x, y):
+        parent[find(x)] = find(y)
+
+    # O(n^2) pairwise comparison — union matching pairs
+    for i in range(n):
+        for j in range(i + 1, n):
+            fid_i = candidates[i]["file_id"]
+            fid_j = candidates[j]["file_id"]
+
+            # Skip provenance-related pairs
+            if (fid_i, fid_j) in provenance_relations:
+                continue
+
+            sim = _jaccard_similarity(candidates[i]["body"], candidates[j]["body"])
+            if sim >= threshold:
+                union(i, j)
+
+    # Collect groups by root
+    groups_by_root = defaultdict(list)
+    for idx in range(n):
+        groups_by_root[find(idx)].append(idx)
+
+    # Build result groups — only include roots with 2+ members
+    results = []
+    for root, members in groups_by_root.items():
+        if len(members) < 2:
+            continue
+
+        # Compute the minimum pairwise similarity across all pairs in the group
+        min_sim = 1.0
+        for a in range(len(members)):
+            for b in range(a + 1, len(members)):
+                fid_a = candidates[members[a]]["file_id"]
+                fid_b = candidates[members[b]]["file_id"]
+                sim = _jaccard_similarity(
+                    candidates[members[a]]["body"],
+                    candidates[members[b]]["body"],
+                )
+                min_sim = min(min_sim, sim)
+
+        file_entries = [
+            {k: v for k, v in candidates[idx].items() if k != "body"}
+            for idx in members
+        ]
+
+        results.append(
+            {
+                "match_type": "text_similar",
+                "similarity": min_sim,
+                "files": file_entries,
+            }
+        )
+
+    return results
 
 
 def _get_provenance_relations(conn):
