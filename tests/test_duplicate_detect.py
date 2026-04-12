@@ -593,3 +593,57 @@ class TestIngestProvenance:
         close_db(conn)
 
         assert result is None
+
+
+class TestEndToEnd:
+    """End-to-end integration test for the full duplicate workflow."""
+
+    def test_full_workflow(self, tmp_path):
+        """Scan -> proposals -> apply -> status -> purge."""
+        import json
+        from scripts.duplicate_detect import scan_duplicates, generate_proposals
+        from scripts.duplicate_manage import apply_quarantine, get_quarantine_status, purge_expired
+
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        # Create files: two exact duplicates, one unique
+        make_file(dest / "Letters" / "letter-v1.pdf", "Dear Alice, same letter content here")
+        make_file(dest / "Letters" / "letter-v2.pdf", "Dear Alice, same letter content here")
+        make_file(dest / "Photos" / "sunset.jpg", "unique photo data")
+
+        # Index
+        conn = get_db(dest)
+        for f in (dest / "Letters").glob("*.pdf"):
+            index_file(conn, dest, f)
+        index_file(conn, dest, dest / "Photos" / "sunset.jpg")
+
+        # Scan
+        groups = scan_duplicates(conn, dest)
+        assert len(groups) == 1
+        assert groups[0]["match_type"] == "exact"
+
+        # Generate proposals
+        generate_proposals(groups, dest)
+        assert (dest / "_duplicate-proposals.json").exists()
+        assert (dest / "_duplicate-proposals.md").exists()
+
+        # Apply quarantine
+        result = apply_quarantine(conn, dest)
+        assert result["quarantined"] == 1
+
+        # Check status
+        status = get_quarantine_status(conn)
+        assert status["total_files"] == 1
+
+        # Force purge by backdating TTL
+        conn.execute("UPDATE quarantine SET purge_after = datetime('now', '-1 day')")
+        conn.commit()
+        purge_result = purge_expired(conn, dest)
+        assert purge_result["purged"] == 1
+
+        # Status should be empty
+        status = get_quarantine_status(conn)
+        assert status["total_files"] == 0
+
+        close_db(conn)
