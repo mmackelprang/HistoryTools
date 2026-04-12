@@ -248,6 +248,8 @@ def init_schema(conn):
             pdf_path TEXT NOT NULL,
             model TEXT NOT NULL,
             page_count INTEGER NOT NULL,
+            page_start INTEGER NOT NULL DEFAULT 0,
+            chunk_pages INTEGER,
             status TEXT NOT NULL DEFAULT 'submitted',
             submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMP,
