@@ -242,6 +242,19 @@ def init_schema(conn):
             file_size INTEGER
         );
 
+        CREATE TABLE IF NOT EXISTS batches (
+            id INTEGER PRIMARY KEY,
+            batch_id TEXT NOT NULL,
+            pdf_path TEXT NOT NULL,
+            model TEXT NOT NULL,
+            page_count INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'submitted',
+            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            error_message TEXT,
+            UNIQUE(batch_id)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_provenance_source_hash
             ON provenance(source_hash);
         CREATE INDEX IF NOT EXISTS idx_provenance_parent

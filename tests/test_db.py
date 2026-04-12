@@ -973,3 +973,66 @@ class TestSchemaV2:
         assert "files" in tables
 
         close_db(conn)
+
+
+# ── Batches table tests ───────────────────────────────────────────────────
+
+
+class TestBatchesTable:
+    """Test batches table for Gemini batch job tracking."""
+
+    def test_batches_table_exists(self, tmp_path):
+        conn = get_db(tmp_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='batches'"
+        )
+        assert cursor.fetchone() is not None
+        close_db(conn)
+
+    def test_batches_insert_and_query(self, tmp_path):
+        conn = get_db(tmp_path)
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count, status)
+            VALUES (?, ?, ?, ?, ?)
+        """, ("batch-abc123", "Letters/letter.pdf", "gemini-2.5-flash", 5, "submitted"))
+        conn.commit()
+        cursor = conn.execute("SELECT * FROM batches WHERE batch_id = ?", ("batch-abc123",))
+        row = cursor.fetchone()
+        assert row["pdf_path"] == "Letters/letter.pdf"
+        assert row["model"] == "gemini-2.5-flash"
+        assert row["page_count"] == 5
+        assert row["status"] == "submitted"
+        close_db(conn)
+
+    def test_batches_unique_batch_id(self, tmp_path):
+        import sqlite3
+        conn = get_db(tmp_path)
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count)
+            VALUES (?, ?, ?, ?)
+        """, ("batch-123", "a.pdf", "gemini-2.5-flash", 1))
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("""
+                INSERT INTO batches (batch_id, pdf_path, model, page_count)
+                VALUES (?, ?, ?, ?)
+            """, ("batch-123", "b.pdf", "gemini-2.5-flash", 2))
+        close_db(conn)
+
+    def test_batches_status_update(self, tmp_path):
+        conn = get_db(tmp_path)
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count)
+            VALUES (?, ?, ?, ?)
+        """, ("batch-456", "letter.pdf", "gemini-2.5-flash", 3))
+        conn.commit()
+        conn.execute("""
+            UPDATE batches SET status = 'succeeded', completed_at = CURRENT_TIMESTAMP
+            WHERE batch_id = ?
+        """, ("batch-456",))
+        conn.commit()
+        cursor = conn.execute("SELECT status, completed_at FROM batches WHERE batch_id = ?", ("batch-456",))
+        row = cursor.fetchone()
+        assert row["status"] == "succeeded"
+        assert row["completed_at"] is not None
+        close_db(conn)
