@@ -105,10 +105,77 @@ def cmd_photos(args):
 
 
 def cmd_duplicates(args):
-    """Find identical files by MD5 hash and move duplicates."""
-    sys.argv = ['handle_duplicates'] + args
-    from .handle_duplicates import main
-    main()
+    """Detect, quarantine, restore, and purge duplicate files."""
+    import argparse as _argparse
+    parser = _argparse.ArgumentParser(description="Duplicate management")
+    parser.add_argument("--config", default=None)
+    parser.add_argument("--scan", action="store_true", help="Detect duplicates, write proposals")
+    parser.add_argument("--apply", action="store_true", help="Quarantine approved duplicates")
+    parser.add_argument("--status", action="store_true", help="Show quarantine summary")
+    parser.add_argument("--restore", type=str, default=None, help="Restore a quarantined file")
+    parser.add_argument("--purge", action="store_true", help="Delete files past TTL")
+    parser.add_argument("--all", action="store_true", help="With --purge: ignore TTL")
+    parser.add_argument("--dry-run", action="store_true", help="Preview without changes")
+    parser.add_argument("--folder", default=None, help="Limit scan to folder")
+    parser.add_argument("--type", default=None, choices=["exact", "similar"], help="Detection type filter")
+    parser.add_argument("--threshold", type=float, default=0.90, help="Text similarity threshold")
+    parsed = parser.parse_args(args)
+
+    from .config import load_config
+    from .db import get_db, close_db
+
+    config = load_config(parsed.config)
+    dest_root = config["dest_root"]
+    conn = get_db(dest_root, config)
+
+    try:
+        if parsed.scan:
+            from .duplicate_detect import scan_duplicates, generate_proposals
+            print("Scanning for duplicates...")
+            groups = scan_duplicates(
+                conn, dest_root,
+                threshold=parsed.threshold,
+                folder=parsed.folder,
+                scan_type=parsed.type,
+            )
+            if groups:
+                generate_proposals(groups, dest_root)
+                print(f"\nFound {len(groups)} duplicate groups. Review:")
+                print(f"  {dest_root / '_duplicate-proposals.md'}")
+                print(f"\nThen run: family-archive duplicates --apply")
+            else:
+                print("No duplicates found.")
+
+        elif parsed.apply:
+            from .duplicate_manage import apply_quarantine
+            apply_quarantine(conn, dest_root, dry_run=parsed.dry_run)
+
+        elif parsed.status:
+            from .duplicate_manage import get_quarantine_status
+            status = get_quarantine_status(conn)
+            print(f"\nQuarantine status:")
+            print(f"  Files:   {status['total_files']}")
+            size_mb = status['total_size_bytes'] / (1024 * 1024)
+            print(f"  Size:    {size_mb:.1f} MB")
+            print(f"  Expired: {status['expired']} (ready to purge)")
+            if status.get('by_reason'):
+                print(f"  By type:")
+                for reason, count in status['by_reason'].items():
+                    print(f"    {reason}: {count}")
+
+        elif parsed.restore:
+            from .duplicate_manage import restore_file
+            restore_file(conn, dest_root, parsed.restore)
+
+        elif parsed.purge:
+            from .duplicate_manage import purge_expired
+            purge_expired(conn, dest_root, purge_all=parsed.all)
+
+        else:
+            parser.print_help()
+
+    finally:
+        close_db(conn)
 
 
 def cmd_report(args):
@@ -335,7 +402,7 @@ def main():
     subparsers.add_parser('speakers', help='Assign real names to speaker labels')
     subparsers.add_parser('detect-dates', help='Detect dates in undated files')
     subparsers.add_parser('photos', help='Catalog photos with EXIF data')
-    subparsers.add_parser('duplicates', help='Find and handle duplicate files')
+    subparsers.add_parser('duplicates', help='Detect and manage duplicate files (--scan, --apply, --status, --purge)')
     subparsers.add_parser('report', help='Generate archive summary report')
     subparsers.add_parser('verify', help='Verify required tools are installed')
     subparsers.add_parser('split', help='Split compilation PDFs into individual documents (or --apply)')

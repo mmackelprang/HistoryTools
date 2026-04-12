@@ -72,3 +72,15 @@ class TestPlaceholderCommands:
         )
         assert result.returncode == 0
         assert "Coming soon" in result.stdout
+
+
+class TestDuplicatesCLI:
+    """Test the duplicates subcommand dispatches correctly."""
+
+    def test_duplicates_no_args_shows_help(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "scripts.cli", "duplicates"],
+            capture_output=True, text=True, cwd=REPO_ROOT,
+        )
+        # Should show help, not crash or say "Coming soon"
+        assert "Coming soon" not in result.stdout
