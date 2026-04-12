@@ -163,3 +163,79 @@ def check_status(client, conn):
           f"{counts['failed']} failed")
 
     return counts
+
+
+def collect_results(client, conn, dest_root):
+    """Collect results from succeeded batch jobs and write transcript files.
+
+    For each succeeded batch, retrieves the per-page responses, assembles
+    them in order, and creates the .transcript.md file using the same
+    function as the real-time path.
+
+    Args:
+        client: google.genai.Client instance.
+        conn: SQLite connection.
+        dest_root: Archive root directory.
+
+    Returns:
+        Number of transcripts collected.
+    """
+    from transcribe_pdfs_gemini import create_transcript_md
+
+    dest_root = Path(dest_root)
+    cursor = conn.execute(
+        "SELECT batch_id, pdf_path, model, page_count FROM batches WHERE status = 'succeeded'"
+    )
+    succeeded = cursor.fetchall()
+
+    if not succeeded:
+        print("No completed batch jobs to collect.")
+        return 0
+
+    collected = 0
+
+    for row in succeeded:
+        batch_id = row["batch_id"]
+        pdf_path_rel = row["pdf_path"]
+        model = row["model"]
+        page_count = row["page_count"]
+        pdf_path = dest_root / pdf_path_rel
+
+        try:
+            job = client.batches.get(name=batch_id)
+
+            # Extract page texts from inline responses
+            page_texts = []
+            if job.dest and job.dest.inlined_responses:
+                for resp in job.dest.inlined_responses:
+                    if resp.error:
+                        page_texts.append("[Page transcription failed]")
+                    elif resp.response and resp.response.text:
+                        page_texts.append(resp.response.text.strip())
+                    else:
+                        page_texts.append("[Page appears blank or illegible]")
+
+            if not page_texts:
+                print(f"  {pdf_path_rel}: no responses found")
+                continue
+
+            # Create transcript using the shared function
+            md_path, confidence, word_count = create_transcript_md(
+                pdf_path, page_texts, model, dest_root
+            )
+
+            # Mark as collected
+            conn.execute("""
+                UPDATE batches SET status = 'collected', completed_at = CURRENT_TIMESTAMP
+                WHERE batch_id = ?
+            """, (batch_id,))
+            conn.commit()
+
+            collected += 1
+            print(f"  {pdf_path_rel}: {word_count} words, confidence={confidence}")
+
+        except Exception as e:
+            print(f"  {pdf_path_rel}: error collecting ({e})")
+
+    print(f"\nCollected {collected} transcripts")
+    return collected

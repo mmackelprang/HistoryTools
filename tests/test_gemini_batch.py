@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from scripts.db import get_db, close_db
-from scripts.gemini_batch import submit_batch, check_status
+from scripts.gemini_batch import submit_batch, check_status, collect_results
 
 
 def make_file(path: Path, content: str = "test content") -> Path:
@@ -165,5 +165,81 @@ class TestCheckStatus:
         mock_client = MagicMock()
         counts = check_status(mock_client, conn)
 
+        mock_client.batches.get.assert_not_called()
+        close_db(conn)
+
+
+class TestCollectResults:
+    """Test collecting batch results and writing transcripts."""
+
+    def _insert_succeeded(self, conn, batch_id, pdf_path, page_count=2):
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count, status)
+            VALUES (?, ?, ?, ?, 'succeeded')
+        """, (batch_id, pdf_path, "gemini-2.5-flash", page_count))
+        conn.commit()
+
+    def test_collect_writes_transcript(self, tmp_path):
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        pdf = make_test_pdf(dest / "Letters" / "letter.pdf", pages=2)
+        conn = get_db(dest)
+        self._insert_succeeded(conn, "batches/b1", "Letters/letter.pdf", 2)
+
+        # Mock client with inline responses
+        mock_client = MagicMock()
+        mock_job = MagicMock()
+        mock_response_1 = MagicMock()
+        mock_response_1.response.text = "Page 1 transcribed text"
+        mock_response_1.error = None
+        mock_response_2 = MagicMock()
+        mock_response_2.response.text = "Page 2 transcribed text"
+        mock_response_2.error = None
+        mock_job.dest.inlined_responses = [mock_response_1, mock_response_2]
+        mock_client.batches.get.return_value = mock_job
+
+        count = collect_results(mock_client, conn, dest)
+
+        assert count == 1
+        transcript = dest / "Letters" / "letter.transcript.md"
+        assert transcript.exists()
+        content = transcript.read_text(encoding="utf-8")
+        assert "Page 1 transcribed text" in content
+        assert "Page 2 transcribed text" in content
+        close_db(conn)
+
+    def test_collect_updates_status_to_collected(self, tmp_path):
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        make_test_pdf(dest / "Letters" / "letter.pdf", pages=1)
+        conn = get_db(dest)
+        self._insert_succeeded(conn, "batches/b1", "Letters/letter.pdf", 1)
+
+        mock_client = MagicMock()
+        mock_job = MagicMock()
+        mock_response = MagicMock()
+        mock_response.response.text = "Transcribed content"
+        mock_response.error = None
+        mock_job.dest.inlined_responses = [mock_response]
+        mock_client.batches.get.return_value = mock_job
+
+        collect_results(mock_client, conn, dest)
+
+        cursor = conn.execute("SELECT status FROM batches WHERE batch_id = ?", ("batches/b1",))
+        assert cursor.fetchone()["status"] == "collected"
+        close_db(conn)
+
+    def test_collect_skips_non_succeeded(self, tmp_path):
+        conn = get_db(tmp_path)
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count, status)
+            VALUES (?, ?, ?, ?, 'submitted')
+        """, ("batches/b1", "letter.pdf", "gemini-2.5-flash", 1))
+        conn.commit()
+
+        mock_client = MagicMock()
+        count = collect_results(mock_client, conn, tmp_path)
+
+        assert count == 0
         mock_client.batches.get.assert_not_called()
         close_db(conn)
