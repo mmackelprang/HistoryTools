@@ -614,6 +614,41 @@ def generate_proposals(groups, dest_root):
     md_path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def check_ingest_duplicates(conn, source_hash):
+    """Check if a file with this hash has already been ingested.
+
+    Checks both the provenance table (by source_hash) and the files table (by md5_hash).
+
+    Args:
+        conn: SQLite connection.
+        source_hash: MD5 hash of the source file.
+
+    Returns:
+        Dict with "path" of the existing file, or None if no match.
+    """
+    # Check provenance first (most authoritative)
+    cursor = conn.execute("""
+        SELECT f.path FROM provenance p
+        JOIN files f ON f.id = p.file_id
+        WHERE p.source_hash = ?
+        LIMIT 1
+    """, (source_hash,))
+    row = cursor.fetchone()
+    if row:
+        return {"path": row["path"]}
+
+    # Fall back to checking files table by md5
+    cursor = conn.execute(
+        "SELECT path FROM files WHERE md5_hash = ? LIMIT 1",
+        (source_hash,)
+    )
+    row = cursor.fetchone()
+    if row:
+        return {"path": row["path"]}
+
+    return None
+
+
 def scan_duplicates(conn, dest_root, threshold=0.90, folder=None, scan_type=None):
     """Orchestrate all duplicate detection strategies and return combined groups.
 
