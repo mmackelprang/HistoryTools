@@ -14,6 +14,7 @@ from scripts.duplicate_detect import (
     score_quality,
     generate_proposals,
     scan_duplicates,
+    check_ingest_duplicates,
 )
 
 try:
@@ -472,6 +473,54 @@ class TestProposalGeneration:
         assert len(group["files"]) == 2
 
 
+class TestSplitProvenance:
+    """Test that split_apply records provenance."""
+
+    def test_split_creates_provenance_record(self, tmp_path):
+        import fitz
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        # Create a 3-page PDF
+        doc = fitz.open()
+        for i in range(3):
+            page = doc.new_page()
+            text_point = fitz.Point(72, 72)
+            page.insert_text(text_point, f"Page {i+1} content")
+        pdf_path = dest / "Letters" / "compilation.pdf"
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(pdf_path))
+        doc.close()
+        # Create transcript
+        make_file(
+            dest / "Letters" / "compilation.transcript.md",
+            "---\nsource_file: compilation.pdf\n---\n\n## Page 1\n\nPage 1 content\n\n## Page 2\n\nPage 2 content\n\n## Page 3\n\nPage 3 content\n"
+        )
+        # Index the parent in DB
+        conn = get_db(dest)
+        parent_id = index_file(conn, dest, pdf_path)
+        close_db(conn)
+
+        from scripts.split_apply import apply_single_split
+        segment = {
+            "pages": [1, 2],
+            "proposed_name": "1984-03-15_letter.pdf",
+            "proposed_folder": "Letters",
+            "description": "Letter from Alice",
+        }
+        result = apply_single_split(pdf_path, dest / "Letters" / "compilation.transcript.md", segment, dest)
+        assert result["status"] == "ok"
+
+        # Check provenance was recorded
+        conn = get_db(dest)
+        cursor = conn.execute(
+            "SELECT * FROM provenance WHERE operation = 'split'"
+        )
+        row = cursor.fetchone()
+        close_db(conn)
+        assert row is not None
+        assert row["parent_file_id"] == parent_id
+
+
 class TestScanDuplicates:
 
     def test_scan_runs_all_strategies(self, tmp_path):
@@ -507,3 +556,40 @@ class TestScanDuplicates:
         close_db(conn)
 
         assert groups == []
+
+
+class TestIngestProvenance:
+
+    def test_source_hash_in_provenance_detected(self, tmp_path):
+        """A file indexed with a provenance source_hash is detected as a duplicate."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        file_path = make_file(dest / "folder_a" / "original.txt", "source content abc")
+
+        conn = get_db(dest)
+        file_id = index_file(conn, dest, file_path)
+
+        source_hash = "aabbccddeeff0011"
+        conn.execute(
+            "INSERT INTO provenance (file_id, source_hash, operation, detail) VALUES (?, ?, ?, ?)",
+            (file_id, source_hash, "ingest", "test"),
+        )
+        conn.commit()
+
+        result = check_ingest_duplicates(conn, source_hash)
+        close_db(conn)
+
+        assert result is not None
+        assert result["path"] == "folder_a/original.txt"
+
+    def test_unknown_hash_not_detected(self, tmp_path):
+        """A hash that does not exist in provenance or files returns None."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        conn = get_db(dest)
+        result = check_ingest_duplicates(conn, "deadbeefdeadbeef")
+        close_db(conn)
+
+        assert result is None
