@@ -2,7 +2,8 @@
 Gemini Batch API integration for the Family Archive.
 
 Submits PDF transcription jobs to Gemini's batch endpoint for 50% cost savings.
-One batch job per PDF. Results are collected asynchronously via --collect.
+One batch job per PDF (or multiple chunks for large PDFs).
+Results are collected asynchronously via --collect.
 """
 
 import base64
@@ -10,6 +11,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+# 18MB limit per chunk (leaves headroom for base64 overhead and prompt text)
+_CHUNK_SIZE_LIMIT = 18 * 1024 * 1024
 
 
 def _rel_path(dest_root, file_path):
@@ -21,11 +25,26 @@ def _rel_path(dest_root, file_path):
     return str(rel).replace("\\", "/")
 
 
+def _build_request(image_bytes, prompt):
+    """Build a single inline batch request dict from image bytes."""
+    mime_type = "image/jpeg" if image_bytes[:2] == b'\xff\xd8' else "image/png"
+    b64_data = base64.b64encode(image_bytes).decode("ascii")
+    return {
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": mime_type, "data": b64_data}},
+            ],
+            "role": "user",
+        }]
+    }, len(b64_data)
+
+
 def submit_batch(client, model, pdf_path, dest_root, conn, dpi=200):
     """Submit a PDF for batch transcription via Gemini Batch API.
 
-    Renders each page to an image, builds batch requests, and submits
-    to Gemini. Records the batch job in the batches SQLite table.
+    Renders each page to an image and submits batch requests. Large PDFs
+    are automatically split into multiple chunks under 18MB each.
 
     Args:
         client: google.genai.Client instance.
@@ -36,7 +55,7 @@ def submit_batch(client, model, pdf_path, dest_root, conn, dpi=200):
         dpi: Render DPI for page images (default 200).
 
     Returns:
-        Batch job name string, or None if skipped.
+        List of batch job name strings, or None if skipped.
     """
     pdf_path = Path(pdf_path)
     rel = _rel_path(dest_root, pdf_path)
@@ -50,7 +69,7 @@ def submit_batch(client, model, pdf_path, dest_root, conn, dpi=200):
         print(f"  Skipping (already submitted): {rel}")
         return None
 
-    # Render pages
+    # Render pages and build requests, chunking by size
     from transcribe_pdfs_gemini import render_page_to_image, TRANSCRIPTION_PROMPT
     import fitz
 
@@ -58,51 +77,67 @@ def submit_batch(client, model, pdf_path, dest_root, conn, dpi=200):
     try:
         page_count = len(doc)
 
-        # Build inline requests — one per page
-        inline_requests = []
-
+        # Build per-page requests and track sizes
+        page_requests = []
+        page_sizes = []
         for page_num in range(page_count):
             image_bytes = render_page_to_image(doc, page_num, dpi=dpi)
-            mime_type = "image/jpeg" if image_bytes[:2] == b'\xff\xd8' else "image/png"
-            b64_data = base64.b64encode(image_bytes).decode("ascii")
-
-            inline_requests.append({
-                "contents": [{
-                    "parts": [
-                        {"text": TRANSCRIPTION_PROMPT},
-                        {"inline_data": {"mime_type": mime_type, "data": b64_data}},
-                    ],
-                    "role": "user",
-                }]
-            })
+            request, b64_size = _build_request(image_bytes, TRANSCRIPTION_PROMPT)
+            page_requests.append(request)
+            page_sizes.append(b64_size)
     finally:
         doc.close()
 
-    # Check total size — inline batch limited to 20MB
-    total_size = sum(len(r["contents"][0]["parts"][1]["inline_data"]["data"]) for r in inline_requests)
-    if total_size > 20 * 1024 * 1024:
-        print(f"  WARNING: {rel} is {total_size / 1024 / 1024:.1f}MB — exceeds 20MB inline limit.")
-        print(f"  File-based batch upload not yet implemented. Use --fast for this file.")
-        return None
+    # Split into chunks under the size limit
+    chunks = []  # list of (page_start, requests_list)
+    current_chunk = []
+    current_size = 0
+    chunk_start = 0
 
-    # Submit batch
-    batch_job = client.batches.create(
-        model=model,
-        src=inline_requests,
-        config={"display_name": pdf_path.name},
-    )
+    for i, (request, size) in enumerate(zip(page_requests, page_sizes)):
+        if current_chunk and current_size + size > _CHUNK_SIZE_LIMIT:
+            # Flush current chunk
+            chunks.append((chunk_start, current_chunk))
+            current_chunk = []
+            current_size = 0
+            chunk_start = i
 
-    batch_id = batch_job.name
+        current_chunk.append(request)
+        current_size += size
 
-    # Record in database
-    conn.execute("""
-        INSERT INTO batches (batch_id, pdf_path, model, page_count, status)
-        VALUES (?, ?, ?, ?, 'submitted')
-    """, (batch_id, rel, model, page_count))
-    conn.commit()
+    if current_chunk:
+        chunks.append((chunk_start, current_chunk))
 
-    print(f"  Submitted: {rel} ({page_count} pages) -> {batch_id}")
-    return batch_id
+    # Submit each chunk as a separate batch job
+    batch_ids = []
+    chunk_label = f" ({len(chunks)} chunks)" if len(chunks) > 1 else ""
+
+    for chunk_idx, (page_start, chunk_requests) in enumerate(chunks):
+        chunk_pages = len(chunk_requests)
+
+        if len(chunks) > 1:
+            display_name = f"{pdf_path.name} [pages {page_start+1}-{page_start+chunk_pages}]"
+        else:
+            display_name = pdf_path.name
+
+        batch_job = client.batches.create(
+            model=model,
+            src=chunk_requests,
+            config={"display_name": display_name},
+        )
+
+        batch_id = batch_job.name
+
+        conn.execute("""
+            INSERT INTO batches (batch_id, pdf_path, model, page_count, page_start, chunk_pages, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'submitted')
+        """, (batch_id, rel, model, page_count, page_start, chunk_pages))
+        conn.commit()
+
+        batch_ids.append(batch_id)
+
+    print(f"  Submitted: {rel} ({page_count} pages{chunk_label}) -> {len(batch_ids)} job(s)")
+    return batch_ids
 
 
 # Gemini job state -> our status mapping
@@ -128,7 +163,7 @@ def check_status(client, conn):
         Dict with counts: {"pending": int, "succeeded": int, "failed": int, "expired": int}
     """
     cursor = conn.execute(
-        "SELECT batch_id, pdf_path FROM batches WHERE status = 'submitted'"
+        "SELECT batch_id, pdf_path, page_start, chunk_pages FROM batches WHERE status = 'submitted'"
     )
     pending_batches = cursor.fetchall()
 
@@ -137,6 +172,9 @@ def check_status(client, conn):
     for row in pending_batches:
         batch_id = row["batch_id"]
         pdf_path = row["pdf_path"]
+        chunk_info = ""
+        if row["chunk_pages"] and row["page_start"] > 0:
+            chunk_info = f" [pages {row['page_start']+1}-{row['page_start']+row['chunk_pages']}]"
 
         try:
             job = client.batches.get(name=batch_id)
@@ -154,13 +192,13 @@ def check_status(client, conn):
                 """, (new_status, error_msg, batch_id))
                 conn.commit()
                 counts[new_status] = counts.get(new_status, 0) + 1
-                print(f"  {pdf_path}: {new_status}")
+                print(f"  {pdf_path}{chunk_info}: {new_status}")
             else:
                 counts["pending"] += 1
-                print(f"  {pdf_path}: pending ({state_name})")
+                print(f"  {pdf_path}{chunk_info}: pending ({state_name})")
 
         except Exception as e:
-            print(f"  {pdf_path}: error checking status ({e})")
+            print(f"  {pdf_path}{chunk_info}: error checking status ({e})")
             counts["pending"] += 1
 
     total = sum(counts.values())
@@ -174,9 +212,9 @@ def check_status(client, conn):
 def collect_results(client, conn, dest_root):
     """Collect results from succeeded batch jobs and write transcript files.
 
-    For each succeeded batch, retrieves the per-page responses, assembles
-    them in order, and creates the .transcript.md file using the same
-    function as the real-time path.
+    For multi-chunk PDFs, waits until ALL chunks have succeeded before
+    assembling. Gathers page texts from all chunks in page order and
+    creates a single .transcript.md file.
 
     Args:
         client: google.genai.Client instance.
@@ -189,57 +227,93 @@ def collect_results(client, conn, dest_root):
     from transcribe_pdfs_gemini import create_transcript_md
 
     dest_root = Path(dest_root)
-    cursor = conn.execute(
-        "SELECT batch_id, pdf_path, model, page_count FROM batches WHERE status = 'succeeded'"
-    )
-    succeeded = cursor.fetchall()
 
-    if not succeeded:
+    # Find PDFs where all chunks have succeeded (none still submitted/pending)
+    cursor = conn.execute("""
+        SELECT pdf_path, model, page_count
+        FROM batches
+        WHERE status = 'succeeded'
+        GROUP BY pdf_path
+    """)
+    candidates = cursor.fetchall()
+
+    if not candidates:
         print("No completed batch jobs to collect.")
         return 0
 
     collected = 0
 
-    for row in succeeded:
-        batch_id = row["batch_id"]
+    for row in candidates:
         pdf_path_rel = row["pdf_path"]
         model = row["model"]
-        page_count = row["page_count"]
+        total_pages = row["page_count"]
         pdf_path = dest_root / pdf_path_rel
 
+        # Check if any chunks for this PDF are still pending
+        pending = conn.execute(
+            "SELECT COUNT(*) as cnt FROM batches WHERE pdf_path = ? AND status = 'submitted'",
+            (pdf_path_rel,)
+        ).fetchone()["cnt"]
+
+        if pending > 0:
+            print(f"  {pdf_path_rel}: waiting for {pending} chunk(s) to complete")
+            continue
+
+        # Get all succeeded chunks for this PDF, ordered by page_start
+        chunks = conn.execute("""
+            SELECT batch_id, page_start, chunk_pages
+            FROM batches
+            WHERE pdf_path = ? AND status = 'succeeded'
+            ORDER BY page_start
+        """, (pdf_path_rel,)).fetchall()
+
         try:
-            job = client.batches.get(name=batch_id)
+            # Gather page texts from all chunks in order
+            all_page_texts = {}
 
-            # Extract page texts from inline responses
-            page_texts = []
-            dest = getattr(job, "dest", None)
-            if dest and getattr(dest, "inlined_responses", None):
-                for resp in dest.inlined_responses:
-                    if resp.error:
-                        page_texts.append("[Page transcription failed]")
-                    elif resp.response and resp.response.text:
-                        page_texts.append(resp.response.text.strip())
-                    else:
-                        page_texts.append("[Page appears blank or illegible]")
+            for chunk in chunks:
+                batch_id = chunk["batch_id"]
+                page_start = chunk["page_start"]
 
-            if not page_texts:
+                job = client.batches.get(name=batch_id)
+
+                dest = getattr(job, "dest", None)
+                if dest and getattr(dest, "inlined_responses", None):
+                    for i, resp in enumerate(dest.inlined_responses):
+                        page_num = page_start + i
+                        if resp.error:
+                            all_page_texts[page_num] = "[Page transcription failed]"
+                        elif resp.response and resp.response.text:
+                            all_page_texts[page_num] = resp.response.text.strip()
+                        else:
+                            all_page_texts[page_num] = "[Page appears blank or illegible]"
+
+            if not all_page_texts:
                 print(f"  {pdf_path_rel}: no responses found")
                 continue
+
+            # Assemble pages in order
+            page_texts = [
+                all_page_texts.get(pn, "[Page missing from batch response]")
+                for pn in range(total_pages)
+            ]
 
             # Create transcript using the shared function
             md_path, confidence, word_count = create_transcript_md(
                 pdf_path, page_texts, model, dest_root
             )
 
-            # Mark as collected
-            conn.execute("""
-                UPDATE batches SET status = 'collected', completed_at = CURRENT_TIMESTAMP
-                WHERE batch_id = ?
-            """, (batch_id,))
+            # Mark all chunks as collected
+            for chunk in chunks:
+                conn.execute("""
+                    UPDATE batches SET status = 'collected', completed_at = CURRENT_TIMESTAMP
+                    WHERE batch_id = ?
+                """, (chunk["batch_id"],))
             conn.commit()
 
+            chunk_info = f" ({len(chunks)} chunks)" if len(chunks) > 1 else ""
             collected += 1
-            print(f"  {pdf_path_rel}: {word_count} words, confidence={confidence}")
+            print(f"  {pdf_path_rel}{chunk_info}: {word_count} words, confidence={confidence}")
 
         except Exception as e:
             print(f"  {pdf_path_rel}: error collecting ({e})")
