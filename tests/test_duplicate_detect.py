@@ -5,7 +5,13 @@ Tests for the duplicate detection module (scripts/duplicate_detect.py).
 from pathlib import Path
 import pytest
 from scripts.db import get_db, close_db, index_file, index_transcript
-from scripts.duplicate_detect import find_exact_duplicates, find_text_similar
+from scripts.duplicate_detect import find_exact_duplicates, find_text_similar, compute_phash, find_perceptual_duplicates
+
+try:
+    from PIL import Image
+    HAS_PILLOW = True
+except ImportError:
+    HAS_PILLOW = False
 
 
 TRANSCRIPT_A = """\
@@ -275,3 +281,104 @@ class TestTextSimilarity:
 
         assert len(groups) == 1
         assert groups[0]["match_type"] == "text_similar"
+
+
+def make_test_image(path, color=(255, 0, 0), size=(100, 100)):
+    """Create a simple test image."""
+    img = Image.new("RGB", size, color)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(str(path))
+    return path
+
+
+def make_checkerboard_image(path, size=(100, 100)):
+    """Create a fine checkerboard image — perceptually distinct from solid-color images."""
+    img = Image.new("RGB", size, (0, 0, 0))
+    for y in range(size[1]):
+        for x in range(size[0]):
+            if (x + y) % 2 == 0:
+                img.putpixel((x, y), (255, 255, 255))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(str(path))
+    return path
+
+
+@pytest.mark.skipif(not HAS_PILLOW, reason="Pillow not installed")
+class TestPerceptualHash:
+
+    def test_compute_phash_returns_string(self, tmp_path):
+        """compute_phash returns a hex string of length 16 for a valid image."""
+        img_path = make_test_image(tmp_path / "test.png", color=(255, 0, 0))
+        result = compute_phash(img_path)
+        assert isinstance(result, str)
+        assert len(result) == 16
+
+    def test_identical_images_same_hash(self, tmp_path):
+        """Two images with the same color produce the same perceptual hash."""
+        img_a = make_test_image(tmp_path / "a.png", color=(128, 64, 32))
+        img_b = make_test_image(tmp_path / "b.png", color=(128, 64, 32))
+        assert compute_phash(img_a) == compute_phash(img_b)
+
+    def test_different_images_different_hash(self, tmp_path):
+        """A checkerboard and a solid black image produce different perceptual hashes."""
+        checker = make_checkerboard_image(tmp_path / "checker.png")
+        solid = make_test_image(tmp_path / "solid.png", color=(0, 0, 0))
+        assert compute_phash(checker) != compute_phash(solid)
+
+    def test_finds_perceptual_duplicates(self, tmp_path):
+        """Two identical images indexed as photos produce one group with match_type='perceptual'."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        img_a = make_test_image(dest / "folder_a" / "photo1.png", color=(200, 150, 100))
+        img_b = make_test_image(dest / "folder_b" / "photo2.png", color=(200, 150, 100))
+
+        conn = get_db(dest)
+        index_file(conn, dest, img_a)
+        index_file(conn, dest, img_b)
+
+        groups = find_perceptual_duplicates(conn, dest)
+        close_db(conn)
+
+        assert len(groups) == 1
+        assert groups[0]["match_type"] == "perceptual"
+        assert len(groups[0]["files"]) == 2
+
+    def test_different_images_not_grouped(self, tmp_path):
+        """A checkerboard and a solid black image are not grouped (Hamming distance > 8)."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        checker = make_checkerboard_image(dest / "folder_a" / "checker.png")
+        solid = make_test_image(dest / "folder_b" / "solid.png", color=(0, 0, 0))
+
+        conn = get_db(dest)
+        index_file(conn, dest, checker)
+        index_file(conn, dest, solid)
+
+        groups = find_perceptual_duplicates(conn, dest, max_distance=8)
+        close_db(conn)
+
+        assert groups == []
+
+    def test_stores_fingerprint_in_db(self, tmp_path):
+        """After running detection, a fingerprint row exists in the DB for each photo."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+
+        img = make_test_image(dest / "folder_a" / "photo.png", color=(100, 200, 50))
+
+        conn = get_db(dest)
+        file_id = index_file(conn, dest, img)
+
+        find_perceptual_duplicates(conn, dest)
+
+        row = conn.execute(
+            "SELECT hash_value FROM fingerprints WHERE file_id = ? AND hash_type = 'phash'",
+            (file_id,),
+        ).fetchone()
+        close_db(conn)
+
+        assert row is not None
+        assert isinstance(row["hash_value"], str)
+        assert len(row["hash_value"]) == 16

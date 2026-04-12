@@ -9,6 +9,11 @@ from the database and filesystem, runs comparisons, and returns duplicate groups
 from collections import defaultdict
 from pathlib import Path
 
+import imagehash
+from PIL import Image
+
+_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".heic", ".webp"}
+
 
 def _jaccard_similarity(text_a, text_b):
     """Compute token-level Jaccard similarity between two strings.
@@ -276,3 +281,200 @@ def find_exact_duplicates(conn):
             )
 
     return groups
+
+
+def compute_phash(file_path):
+    """Compute a perceptual hash for an image file.
+
+    Opens the image with PIL and computes a 64-bit perceptual hash using
+    imagehash.phash().
+
+    Args:
+        file_path: Path (str or Path) to the image file.
+
+    Returns:
+        A 16-character hex string representing the hash, or None on any error.
+    """
+    try:
+        img = Image.open(str(file_path))
+        h = imagehash.phash(img)
+        return str(h)
+    except Exception:
+        return None
+
+
+def _hamming_distance(hash_a, hash_b):
+    """Compute the Hamming distance between two hex hash strings.
+
+    Converts both strings to integers, XORs them, then counts set bits.
+
+    Args:
+        hash_a: Hex string for first hash.
+        hash_b: Hex string for second hash.
+
+    Returns:
+        Integer Hamming distance (number of differing bits), or 64 (maximum)
+        if either hash is None or the strings have different lengths.
+    """
+    if hash_a is None or hash_b is None or len(hash_a) != len(hash_b):
+        return 64
+    xor = int(hash_a, 16) ^ int(hash_b, 16)
+    return bin(xor).count("1")
+
+
+def find_perceptual_duplicates(conn, dest_root, max_distance=8, already_grouped_ids=None):
+    """Find photo files whose perceptual hashes are within max_distance of each other.
+
+    For each photo in the database:
+    - Checks the fingerprints table for a stored phash; computes and stores it if missing.
+    - Compares all pairs by Hamming distance, skipping provenance-related pairs.
+    - Uses union-find to group near-matches.
+
+    Args:
+        conn: SQLite connection.
+        dest_root: Path to the archive root (used to resolve absolute file paths).
+        max_distance: Maximum Hamming distance to consider a match (default 8).
+        already_grouped_ids: Optional set of file_ids to skip.
+
+    Returns:
+        A list of groups, each a dict:
+            {
+                "match_type": "perceptual",
+                "similarity": <float, rounded to 3 decimal places>,
+                "files": [
+                    {
+                        "file_id": int,
+                        "path": str,
+                        "filename": str,
+                        "folder": str,
+                        "file_type": str,
+                        "size_bytes": int,
+                        "date_prefix": str or None,
+                        "indexed_at": str,
+                    },
+                    ...
+                ]
+            }
+    """
+    skip_ids = already_grouped_ids or set()
+    provenance_relations = _get_provenance_relations(conn)
+    dest_root = Path(dest_root)
+
+    # Load all photo records
+    cursor = conn.execute(
+        """
+        SELECT id, path, filename, folder, file_type,
+               size_bytes, date_prefix, indexed_at
+        FROM files
+        WHERE file_type = 'photo'
+        """
+    )
+    all_photos = cursor.fetchall()
+
+    candidates = []
+    for row in all_photos:
+        if row["id"] in skip_ids:
+            continue
+        candidates.append(
+            {
+                "file_id": row["id"],
+                "path": row["path"],
+                "filename": row["filename"],
+                "folder": row["folder"],
+                "file_type": row["file_type"],
+                "size_bytes": row["size_bytes"],
+                "date_prefix": row["date_prefix"],
+                "indexed_at": row["indexed_at"],
+            }
+        )
+
+    # Resolve phashes — check DB first, compute and store if missing
+    phashes = {}
+    for c in candidates:
+        fid = c["file_id"]
+        row = conn.execute(
+            "SELECT hash_value FROM fingerprints WHERE file_id = ? AND hash_type = 'phash'",
+            (fid,),
+        ).fetchone()
+        if row:
+            phashes[fid] = row["hash_value"]
+        else:
+            abs_path = dest_root / c["path"]
+            h = compute_phash(abs_path)
+            phashes[fid] = h
+            if h is not None:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO fingerprints (file_id, hash_type, hash_value, page_number)
+                    VALUES (?, 'phash', ?, 1)
+                    """,
+                    (fid, h),
+                )
+    conn.commit()
+
+    n = len(candidates)
+
+    # Union-find
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(x, y):
+        parent[find(x)] = find(y)
+
+    # Track max distance within each eventual group for similarity computation
+    pair_distances = {}
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            fid_i = candidates[i]["file_id"]
+            fid_j = candidates[j]["file_id"]
+
+            # Skip provenance-related pairs
+            if (fid_i, fid_j) in provenance_relations:
+                continue
+
+            dist = _hamming_distance(phashes.get(fid_i), phashes.get(fid_j))
+            if dist <= max_distance:
+                union(i, j)
+                key = (find(i), find(j))
+                pair_distances[key] = max(pair_distances.get(key, 0), dist)
+
+    # Collect groups by root
+    groups_by_root = defaultdict(list)
+    for idx in range(n):
+        groups_by_root[find(idx)].append(idx)
+
+    results = []
+    for root, members in groups_by_root.items():
+        if len(members) < 2:
+            continue
+
+        # Compute the maximum pairwise distance within the group
+        max_dist_in_group = 0
+        for a in range(len(members)):
+            for b in range(a + 1, len(members)):
+                fid_a = candidates[members[a]]["file_id"]
+                fid_b = candidates[members[b]]["file_id"]
+                dist = _hamming_distance(phashes.get(fid_a), phashes.get(fid_b))
+                max_dist_in_group = max(max_dist_in_group, dist)
+
+        similarity = round(1.0 - (max_dist_in_group / 64.0), 3)
+        file_entries = [
+            {k: v for k, v in candidates[idx].items()}
+            for idx in members
+        ]
+
+        results.append(
+            {
+                "match_type": "perceptual",
+                "similarity": similarity,
+                "files": file_entries,
+            }
+        )
+
+    return results
