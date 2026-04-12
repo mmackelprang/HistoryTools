@@ -415,17 +415,17 @@ def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts, taxono
     source_root = Path(source_root)
     dest_root = Path(dest_root)
 
-    # In merge mode, build hash inventory of existing archive
-    existing_hashes = {}
+    # In merge mode, check for duplicates via SQLite provenance and file hashes
+    use_db_detection = False
+    db_conn = None
     if mode == "merge" and dest_root.exists():
-        print("Building inventory of existing archive for merge...")
-        for f in dest_root.rglob("*"):
-            if f.is_file() and f.suffix.lower() not in {".md", ".json"}:
-                try:
-                    existing_hashes[md5_hash(f)] = str(f.relative_to(dest_root))
-                except Exception:
-                    pass
-        print(f"  {len(existing_hashes)} files indexed")
+        try:
+            from db import get_db
+            db_conn = get_db(dest_root)
+            use_db_detection = True
+            print("Using database for duplicate detection in merge mode")
+        except Exception:
+            print("Warning: could not open archive DB for duplicate detection")
 
     files = []
     by_type = {}
@@ -467,12 +467,14 @@ def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts, taxono
             # Check for duplicates in merge mode
             is_duplicate = False
             duplicate_of = None
-            if mode == "merge" and existing_hashes:
+            if use_db_detection:
                 try:
-                    file_hash = md5_hash(filepath)
-                    if file_hash in existing_hashes:
+                    from duplicate_detect import check_ingest_duplicates
+                    file_hash_val = md5_hash(filepath)
+                    match = check_ingest_duplicates(db_conn, file_hash_val)
+                    if match:
                         is_duplicate = True
-                        duplicate_of = existing_hashes[file_hash]
+                        duplicate_of = match["path"]
                         dupes += 1
                 except Exception:
                     pass
@@ -532,6 +534,9 @@ def scan_source(source_root, dest_root, mode, exclude_dirs, exclude_exts, taxono
         "unprocessed_types": unprocessed_types,
         "needs_review_types": needs_review_types,
     }
+
+    if db_conn:
+        db_conn.close()
 
     return plan
 
@@ -700,7 +705,12 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_ove
     print(f"\n{'=' * 60}")
     print("Stage 5: Detect Duplicates")
     print(f"{'=' * 60}")
-    run_script("handle_duplicates.py", config_args)
+    # Run via module invocation since cli.py uses relative imports
+    import subprocess as _subprocess
+    _subprocess.run(
+        [sys.executable, "-m", "scripts.cli", "duplicates", "--scan"] + config_args,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
 
     # Stage 6: Format Transcripts
     if not skip_format:

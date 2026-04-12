@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+import sqlite3
+
 from scripts.db import (
     get_db,
     init_schema,
@@ -116,7 +118,7 @@ class TestSchema:
         cursor = conn.execute("PRAGMA user_version")
         version = cursor.fetchone()[0]
         close_db(conn)
-        assert version == 1
+        assert version == 2
 
     def test_db_created_at_dest_root(self, tmp_path):
         conn = get_db(tmp_path)
@@ -752,3 +754,222 @@ class TestConvenienceFunctions:
         # Should not raise
         update_transcript_index(dest, tpath)
         update_transcript_index(dest, tpath)  # second call also works
+
+
+# ── Schema v2 tests ───────────────────────────────────────────────────────
+
+
+class TestSchemaV2:
+    """Test schema v2 tables: provenance, fingerprints, quarantine."""
+
+    def test_provenance_table_exists(self, tmp_path):
+        conn = get_db(tmp_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='provenance'"
+        )
+        assert cursor.fetchone() is not None
+        close_db(conn)
+
+    def test_fingerprints_table_exists(self, tmp_path):
+        conn = get_db(tmp_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='fingerprints'"
+        )
+        assert cursor.fetchone() is not None
+        close_db(conn)
+
+    def test_quarantine_table_exists(self, tmp_path):
+        conn = get_db(tmp_path)
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='quarantine'"
+        )
+        assert cursor.fetchone() is not None
+        close_db(conn)
+
+    def test_schema_version_is_2(self, tmp_path):
+        conn = get_db(tmp_path)
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        close_db(conn)
+        assert version == 2
+
+    def test_provenance_insert(self, tmp_path):
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        fpath = make_file(dest / "Letters" / "letter.pdf", "content")
+
+        conn = get_db(dest)
+        file_id = index_file(conn, dest, fpath)
+
+        conn.execute("""
+            INSERT INTO provenance (file_id, source_path, source_hash, operation, detail)
+            VALUES (?, ?, ?, ?, ?)
+        """, (file_id, "originals/letter.pdf", "abc123", "ingest", "initial import"))
+        conn.commit()
+
+        cursor = conn.execute("SELECT * FROM provenance WHERE file_id = ?", (file_id,))
+        row = cursor.fetchone()
+        close_db(conn)
+
+        assert row is not None
+        assert row["file_id"] == file_id
+        assert row["source_path"] == "originals/letter.pdf"
+        assert row["source_hash"] == "abc123"
+        assert row["operation"] == "ingest"
+        assert row["detail"] == "initial import"
+        assert row["parent_file_id"] is None
+        assert row["created_at"] is not None
+
+    def test_provenance_parent_child(self, tmp_path):
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        parent_path = make_file(dest / "Docs" / "parent.pdf", "parent content")
+        child_path = make_file(dest / "Docs" / "child.pdf", "child content")
+
+        conn = get_db(dest)
+        parent_id = index_file(conn, dest, parent_path)
+        child_id = index_file(conn, dest, child_path)
+
+        conn.execute("""
+            INSERT INTO provenance (file_id, parent_file_id, operation, detail)
+            VALUES (?, ?, ?, ?)
+        """, (child_id, parent_id, "split", "page 1 of parent"))
+        conn.commit()
+
+        cursor = conn.execute(
+            "SELECT * FROM provenance WHERE file_id = ?", (child_id,)
+        )
+        row = cursor.fetchone()
+        close_db(conn)
+
+        assert row is not None
+        assert row["file_id"] == child_id
+        assert row["parent_file_id"] == parent_id
+        assert row["operation"] == "split"
+
+    def test_fingerprints_insert(self, tmp_path):
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        fpath = make_file(dest / "Photos" / "photo.jpg", "\x00")
+
+        conn = get_db(dest)
+        file_id = index_file(conn, dest, fpath)
+
+        conn.execute("""
+            INSERT INTO fingerprints (file_id, hash_type, hash_value, page_number)
+            VALUES (?, ?, ?, ?)
+        """, (file_id, "phash", "f0f0f0f0a1a1a1a1", 1))
+        conn.commit()
+
+        cursor = conn.execute(
+            "SELECT * FROM fingerprints WHERE file_id = ?", (file_id,)
+        )
+        row = cursor.fetchone()
+        close_db(conn)
+
+        assert row is not None
+        assert row["file_id"] == file_id
+        assert row["hash_type"] == "phash"
+        assert row["hash_value"] == "f0f0f0f0a1a1a1a1"
+        assert row["page_number"] == 1
+        assert row["computed_at"] is not None
+
+    def test_fingerprints_unique_constraint(self, tmp_path):
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        fpath = make_file(dest / "Photos" / "photo.jpg", "\x00")
+
+        conn = get_db(dest)
+        file_id = index_file(conn, dest, fpath)
+
+        conn.execute("""
+            INSERT INTO fingerprints (file_id, hash_type, hash_value, page_number)
+            VALUES (?, ?, ?, ?)
+        """, (file_id, "phash", "aabbccdd11223344", 1))
+        conn.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("""
+                INSERT INTO fingerprints (file_id, hash_type, hash_value, page_number)
+                VALUES (?, ?, ?, ?)
+            """, (file_id, "phash", "differenthashvalue", 1))
+            conn.commit()
+
+        close_db(conn)
+
+    def test_quarantine_insert(self, tmp_path):
+        conn = get_db(tmp_path)
+
+        conn.execute("""
+            INSERT INTO quarantine (
+                original_path, quarantine_path, duplicate_of, reason,
+                purge_after, file_hash, file_size
+            ) VALUES (?, ?, ?, ?, datetime('now', '+30 days'), ?, ?)
+        """, (
+            "Letters/duplicate.pdf",
+            ".quarantine/2026-04-11_duplicate.pdf",
+            "Letters/original.pdf",
+            "exact_duplicate",
+            "deadbeef12345678",
+            4096,
+        ))
+        conn.commit()
+
+        cursor = conn.execute("SELECT * FROM quarantine WHERE original_path = ?",
+                              ("Letters/duplicate.pdf",))
+        row = cursor.fetchone()
+        close_db(conn)
+
+        assert row is not None
+        assert row["original_path"] == "Letters/duplicate.pdf"
+        assert row["quarantine_path"] == ".quarantine/2026-04-11_duplicate.pdf"
+        assert row["duplicate_of"] == "Letters/original.pdf"
+        assert row["reason"] == "exact_duplicate"
+        assert row["file_hash"] == "deadbeef12345678"
+        assert row["file_size"] == 4096
+        assert row["purge_after"] is not None
+        assert row["quarantined_at"] is not None
+
+    def test_v1_db_upgrades_to_v2(self, tmp_path):
+        """A v1 database (files table only, user_version=1) upgrades to v2 seamlessly."""
+        db_path = tmp_path / ".archive.db"
+
+        # Manually create a v1 database
+        v1_conn = sqlite3.connect(str(db_path))
+        v1_conn.executescript("""
+            CREATE TABLE IF NOT EXISTS files (
+                id INTEGER PRIMARY KEY,
+                path TEXT UNIQUE NOT NULL,
+                filename TEXT NOT NULL,
+                folder TEXT NOT NULL,
+                subfolder TEXT,
+                file_type TEXT,
+                size_bytes INTEGER,
+                date_prefix TEXT,
+                md5_hash TEXT,
+                indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            PRAGMA user_version = 1;
+        """)
+        v1_conn.commit()
+        v1_conn.close()
+
+        # Open with get_db — should upgrade to v2
+        conn = get_db(tmp_path)
+
+        # Verify version is now 2
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        assert version == 2
+
+        # Verify all v2 tables exist
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
+        tables = {row["name"] for row in cursor.fetchall()}
+        assert "provenance" in tables
+        assert "fingerprints" in tables
+        assert "quarantine" in tables
+
+        # Verify the original files table still exists
+        assert "files" in tables
+
+        close_db(conn)

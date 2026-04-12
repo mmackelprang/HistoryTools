@@ -214,6 +214,25 @@ def apply_single_split(source_pdf, source_transcript, segment, dest_root, dry_ru
         result["reason"] = f"PDF extraction failed: {e}"
         return result
 
+    # Record provenance for the split child
+    try:
+        from db import get_db, index_file as db_index_file
+        db_conn = get_db(dest_root)
+        parent_id = db_index_file(db_conn, dest_root, source_pdf)
+        child_id = db_index_file(db_conn, dest_root, output_pdf)
+        if parent_id and child_id:
+            import json as _json
+            detail = _json.dumps({"pages": pages})
+            db_conn.execute("""
+                INSERT OR IGNORE INTO provenance
+                    (file_id, parent_file_id, operation, detail)
+                VALUES (?, ?, 'split', ?)
+            """, (child_id, parent_id, detail))
+            db_conn.commit()
+        db_conn.close()
+    except Exception:
+        pass  # Provenance is best-effort
+
     # Extract transcript (unless --retranscribe)
     if not retranscribe and source_transcript and source_transcript.exists():
         try:
