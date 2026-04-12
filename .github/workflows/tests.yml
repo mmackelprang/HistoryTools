@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest PyMuPDF Pillow python-dotenv imagehash
+          pip install pytest PyMuPDF Pillow python-dotenv imagehash python-docx openpyxl xlrd olefile xlwt
           # Note: we don't install whisper, assemblyai, anthropic, google-genai
           # for CI — tests that need them are skipped
 
