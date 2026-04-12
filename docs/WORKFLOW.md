@@ -38,7 +38,21 @@ family-archive organize
 Files are classified by filename patterns and file type, renamed with date prefixes,
 and copied to the appropriate folders.
 
-### 2. Transcribe PDFs
+### 2. Extract Office Documents
+
+```bash
+# Extract text from DOC, DOCX, XLS, XLSX files
+family-archive extract                              # all supported files
+family-archive extract --folder NeedsReview          # limit to folder
+family-archive extract --file path/to/doc.docx       # single file
+family-archive extract --dry-run                     # preview only
+family-archive extract --force                       # overwrite existing transcripts
+```
+
+Creates `.transcript.md` files from Office documents using local text extraction
+(no API calls, instant results). Supports DOC, DOCX, XLS, XLSX formats.
+
+### 3. Transcribe PDFs
 
 Transcription uses a tiered approach to minimize costs:
 
@@ -73,7 +87,7 @@ family-archive transcribe --fast --force             # overwrite existing transc
 Use `--fast` when you need results immediately. Costs 2x batch mode but returns
 results in minutes instead of hours.
 
-### 3. Transcribe Audio
+### 4. Transcribe Audio
 
 **Option A: AssemblyAI (paid, speaker diarization)**
 ```bash
@@ -86,7 +100,7 @@ family-archive transcribe-audio             # run
 python scripts/transcribe_audio.py
 ```
 
-### 4. Label Speakers (audio only)
+### 5. Label Speakers (audio only)
 
 After audio transcription, assign real names to speakers:
 
@@ -98,7 +112,7 @@ family-archive speakers path/to/transcript.md
 family-archive speakers --dir AudioRecordings --map "A=Alice,B=Bob"
 ```
 
-### 5. Format Transcripts
+### 6. Format Transcripts
 
 Add summaries, markdown headers, and clean formatting:
 
@@ -107,7 +121,7 @@ family-archive format --dry-run
 family-archive format
 ```
 
-### 6. Rename Generic Files
+### 7. Rename Generic Files
 
 ```bash
 # Generate rename proposals
@@ -122,7 +136,7 @@ family-archive rename --apply --dry-run     # preview
 family-archive rename --apply               # apply
 ```
 
-### 7. Split Compilation PDFs
+### 8. Split Compilation PDFs
 
 If you have large PDFs containing multiple letters or journal entries in one file:
 
@@ -147,7 +161,7 @@ family-archive split --apply --archive-original
 Splitting uses existing transcripts for boundary detection (text-only AI call),
 and transcript extraction is free (string parsing, no re-transcription needed).
 
-### 8. Detect Dates in Undated Files
+### 9. Detect Dates in Undated Files
 
 ```bash
 family-archive detect-dates              # propose dates
@@ -155,7 +169,7 @@ family-archive detect-dates              # propose dates
 family-archive detect-dates --apply      # apply approved dates
 ```
 
-### 9. Detect and Manage Duplicates
+### 10. Detect and Manage Duplicates
 
 ```bash
 # Scan for duplicates (exact MD5, text similarity, perceptual hash)
@@ -185,13 +199,13 @@ Duplicates are quarantined to `_duplicates/` for 14 days before permanent deleti
 Files related by provenance (e.g., split from the same compilation PDF) are excluded
 from duplicate detection.
 
-### 10. Catalog Photos
+### 11. Catalog Photos
 
 ```bash
 family-archive photos
 ```
 
-### 11. Build Search Index
+### 12. Build Search Index
 
 ```bash
 # Full rebuild of the search index
@@ -211,13 +225,13 @@ family-archive stats
 The search index is a SQLite database (`.archive.db`) that indexes all files and
 transcript text. It's a rebuildable cache — delete and reindex anytime.
 
-### 12. Generate Report
+### 13. Generate Report
 
 ```bash
 family-archive report
 ```
 
-### 13. Review AI Costs
+### 14. Review AI Costs
 
 After running AI-powered commands, review what you spent:
 

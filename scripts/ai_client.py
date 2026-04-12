@@ -5,14 +5,18 @@ Scripts call these functions instead of vendor-specific SDKs directly.
 
 import os
 import re
-import sys
 import json
 import time
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-from config import load_env
-from cost_tracker import get_tracker
+# ai_client keeps its real implementation here (not in core/) because
+# tests patch "ai_client.load_env" which requires the function to be
+# defined in this module. scripts/core/ai_client.py is a reverse shim.
+try:
+    from .core.config import load_env
+    from .core.cost_tracker import get_tracker
+except ImportError:
+    from config import load_env  # type: ignore[no-redef]
+    from cost_tracker import get_tracker  # type: ignore[no-redef]
 
 RETRYABLE_CODES = {429, 500, 502, 503, 504, 529}
 MAX_RETRIES = 3

@@ -104,6 +104,13 @@ def cmd_photos(args):
     main()
 
 
+def cmd_extract(args):
+    """Extract text from Office documents (DOC, DOCX, XLS, XLSX)."""
+    sys.argv = ['extract_docs'] + args
+    from .extract_docs import main
+    main()
+
+
 def cmd_duplicates(args):
     """Detect, quarantine, restore, and purge duplicate files."""
     import argparse as _argparse
@@ -403,6 +410,7 @@ def main():
     subparsers.add_parser('speakers', help='Assign real names to speaker labels')
     subparsers.add_parser('detect-dates', help='Detect dates in undated files')
     subparsers.add_parser('photos', help='Catalog photos with EXIF data')
+    subparsers.add_parser('extract', help='Extract text from Office documents (DOC, DOCX, XLS, XLSX)')
     subparsers.add_parser('duplicates', help='Detect and manage duplicate files (--scan, --apply, --status, --purge)')
     subparsers.add_parser('report', help='Generate archive summary report')
     subparsers.add_parser('verify', help='Verify required tools are installed')
@@ -431,6 +439,7 @@ def main():
         'speakers': cmd_speakers,
         'detect-dates': cmd_detect_dates,
         'photos': cmd_photos,
+        'extract': cmd_extract,
         'duplicates': cmd_duplicates,
         'report': cmd_report,
         'verify': cmd_verify,
