@@ -1,0 +1,123 @@
+"""
+Tests for the document extraction module (scripts/core/extract.py).
+"""
+
+from pathlib import Path
+
+import pytest
+
+from scripts.core.extract import (
+    extract_file,
+    get_supported_extensions,
+    create_extract_transcript,
+    UnsupportedFormatError,
+)
+
+
+def make_file(path: Path, content: str = "test") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+class TestRegistry:
+    """Test the extractor registry."""
+
+    def test_supported_extensions_includes_docx(self):
+        exts = get_supported_extensions()
+        assert ".docx" in exts
+
+    def test_unsupported_extension_raises(self, tmp_path):
+        path = make_file(tmp_path / "file.xyz", "content")
+        with pytest.raises(UnsupportedFormatError):
+            extract_file(path)
+
+
+class TestDocxExtractor:
+    """Test DOCX text extraction."""
+
+    def _make_docx(self, path, paragraphs):
+        from docx import Document
+        doc = Document()
+        for para in paragraphs:
+            doc.add_paragraph(para)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(path))
+        return path
+
+    def test_extract_docx_text(self, tmp_path):
+        path = self._make_docx(
+            tmp_path / "letter.docx",
+            ["Dear Alice,", "We drove to Springfield last week.", "Love, Bob"]
+        )
+        text, metadata = extract_file(path)
+        assert "Dear Alice" in text
+        assert "Springfield" in text
+        assert "Love, Bob" in text
+
+    def test_extract_docx_metadata(self, tmp_path):
+        path = self._make_docx(tmp_path / "doc.docx", ["Hello world"])
+        text, metadata = extract_file(path)
+        assert metadata["format"] == "docx"
+        assert metadata["word_count"] == 2
+
+    def test_extract_docx_preserves_paragraphs(self, tmp_path):
+        path = self._make_docx(tmp_path / "doc.docx", ["Paragraph one.", "Paragraph two."])
+        text, metadata = extract_file(path)
+        assert "Paragraph one." in text
+        assert "Paragraph two." in text
+        assert text.index("Paragraph one.") < text.index("Paragraph two.")
+
+    def test_extract_docx_with_table(self, tmp_path):
+        from docx import Document
+        doc = Document()
+        doc.add_paragraph("Before table")
+        table = doc.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "Name"
+        table.cell(0, 1).text = "Value"
+        table.cell(1, 0).text = "Alice"
+        table.cell(1, 1).text = "100"
+        doc.add_paragraph("After table")
+        path = tmp_path / "table.docx"
+        doc.save(str(path))
+        text, metadata = extract_file(path)
+        assert "Name" in text
+        assert "Alice" in text
+        assert "100" in text
+
+
+class TestTranscriptGeneration:
+    """Test .transcript.md creation from extracted text."""
+
+    def test_creates_transcript_file(self, tmp_path):
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        source = make_file(dest / "Letters" / "letter.docx", "dummy")
+        md_path = create_extract_transcript(
+            source, "Dear Alice, hello.", {"word_count": 3, "format": "docx"}, dest
+        )
+        assert md_path.exists()
+        assert md_path.name == "letter.transcript.md"
+
+    def test_transcript_has_frontmatter(self, tmp_path):
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        source = make_file(dest / "doc.docx", "dummy")
+        md_path = create_extract_transcript(
+            source, "Hello world.", {"word_count": 2, "format": "docx"}, dest
+        )
+        content = md_path.read_text(encoding="utf-8")
+        assert "source_file: doc.docx" in content
+        assert "transcription_confidence: high" in content
+        assert "transcription_method: extract (docx)" in content
+        assert "word_count: 2" in content
+
+    def test_transcript_has_body(self, tmp_path):
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        source = make_file(dest / "doc.docx", "dummy")
+        md_path = create_extract_transcript(
+            source, "The full body text.", {"word_count": 4, "format": "docx"}, dest
+        )
+        content = md_path.read_text(encoding="utf-8")
+        assert "The full body text." in content
