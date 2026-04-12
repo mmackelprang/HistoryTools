@@ -12,6 +12,9 @@ Usage:
     python transcribe_pdfs_gemini.py --file path/to/file.pdf  # single file
     python transcribe_pdfs_gemini.py --dry-run                # preview, no API calls
     python transcribe_pdfs_gemini.py --model gemini-2.5-pro   # override model
+    python transcribe_pdfs_gemini.py --fast                   # real-time with parallelism
+    python transcribe_pdfs_gemini.py --status                 # check pending batch jobs
+    python transcribe_pdfs_gemini.py --collect                # collect completed batch results
 """
 
 import os
@@ -255,6 +258,104 @@ def collect_pdfs(dest_root, transcribe_folders, target_folder=None, target_file=
     return pdfs
 
 
+def process_single_pdf(pdf, index, total, client, model, dpi, dest_root, limiter=None):
+    """Process a single PDF: render pages, transcribe via API, write transcript.
+
+    Args:
+        pdf: Path to PDF file.
+        index: 1-based index (for progress display).
+        total: Total number of PDFs being processed.
+        client: Gemini API client.
+        model: Model name.
+        dpi: Render DPI.
+        dest_root: Archive root path.
+        limiter: Optional RateLimiter instance.
+
+    Returns:
+        Result dict with keys: file, pages, words, confidence, model, status.
+        On error: file, pages, status="error", error.
+    """
+    rel = pdf.relative_to(dest_root) if pdf.is_relative_to(dest_root) else pdf
+    page_count = get_page_count(pdf)
+    print(f"\n[{index}/{total}] {rel} ({page_count} pages)")
+
+    try:
+        # Check for previously completed pages (incremental resume)
+        completed = load_completed_pages(pdf, page_count)
+        remaining_pages = [pn for pn in range(page_count) if pn not in completed]
+
+        if completed:
+            print(f"  Resuming: {len(completed)} pages cached, {len(remaining_pages)} remaining")
+
+        # Render only pages that need processing
+        doc = fitz.open(str(pdf))
+        page_images = {}
+        for page_num in remaining_pages:
+            page_images[page_num] = render_page_to_image(doc, page_num, dpi=dpi)
+        doc.close()
+
+        # Process remaining pages in parallel (up to 10 concurrent API calls)
+        page_texts = {pn: text for pn, text in completed.items()}
+        max_workers = min(10, len(remaining_pages)) if remaining_pages else 1
+
+        def process_page(page_num):
+            if limiter:
+                limiter.acquire()
+            return page_num, transcribe_page_gemini(client, model, page_images[page_num])
+
+        if remaining_pages:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(process_page, pn): pn for pn in remaining_pages}
+                done_count = len(completed)
+                for future in as_completed(futures):
+                    pn, text = future.result()
+                    page_texts[pn] = text
+                    save_page(pdf, pn, text)  # save incrementally
+                    done_count += 1
+                    if page_count > 1:
+                        print(f"  Page {pn + 1}/{page_count}: {len(text.split())} words ({done_count}/{page_count} done)")
+
+        # Assemble all pages in order
+        ordered_texts = [page_texts[pn] for pn in range(page_count)]
+
+        md_path, confidence, word_count = create_transcript_md(
+            pdf, ordered_texts, model, dest_root
+        )
+        cleanup_pages(pdf)  # remove temp page files after successful assembly
+        print(f"  Done: {word_count} words, confidence={confidence}")
+        return {
+            "file": str(rel),
+            "pages": page_count,
+            "words": word_count,
+            "confidence": confidence,
+            "model": model,
+            "status": "ok",
+        }
+
+    except Exception as e:
+        print(f"  ERROR: {e}")
+        # Don't overwrite page progress — only write error stub if no pages saved
+        pages_dir = get_pages_dir(pdf)
+        saved_pages = len(list(pages_dir.iterdir())) if pages_dir.exists() else 0
+        if saved_pages > 0:
+            print(f"  {saved_pages}/{page_count} pages saved — will resume on next run")
+        # Write error stub
+        md_path = pdf.with_suffix(".transcript.md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(
+                f"---\nsource_file: {pdf.name}\ntranscription_date: {TODAY}\n"
+                f"transcription_confidence: pending\npage_count: {page_count}\n"
+                f"notes: Gemini transcription failed — {e} ({saved_pages}/{page_count} pages saved)\n---\n\n"
+                f"[Transcription failed — {saved_pages}/{page_count} pages completed, will resume on retry]\n"
+            )
+        return {
+            "file": str(rel),
+            "pages": page_count,
+            "status": "error",
+            "error": str(e),
+        }
+
+
 def main():
     parser = argparse.ArgumentParser(description="PDF Transcription with Google Gemini")
     parser.add_argument("--config", default=None, help="Path to config.json")
@@ -268,7 +369,48 @@ def main():
     parser.add_argument("--low-confidence-only", action="store_true",
                         help="Only transcribe PDFs with low-confidence existing transcripts")
     parser.add_argument("--dry-run", action="store_true", help="List files without transcribing")
+    parser.add_argument("--fast", action="store_true",
+                        help="Real-time transcription with cross-PDF parallelism (default is batch mode)")
+    parser.add_argument("--status", action="store_true",
+                        help="Check status of pending batch jobs")
+    parser.add_argument("--collect", action="store_true",
+                        help="Collect results from completed batch jobs")
     args = parser.parse_args()
+
+    config = load_config(args.config)
+    dest_root = config["dest_root"]
+    transcribe_folders = config["transcribe_folders"]
+
+    # Handle --status (no PDF collection needed)
+    if args.status:
+        load_env()
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            print("ERROR: GEMINI_API_KEY not set in .env file.")
+            sys.exit(1)
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        from gemini_batch import check_status
+        from db import get_db, close_db
+        conn = get_db(dest_root)
+        check_status(client, conn)
+        close_db(conn)
+        return
+
+    if args.collect:
+        load_env()
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            print("ERROR: GEMINI_API_KEY not set in .env file.")
+            sys.exit(1)
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        from gemini_batch import collect_results
+        from db import get_db, close_db
+        conn = get_db(dest_root)
+        collect_results(client, conn, dest_root)
+        close_db(conn)
+        return
 
     # Load environment and config
     if not args.dry_run:
@@ -279,10 +421,6 @@ def main():
             print("ERROR: GEMINI_API_KEY not set in .env file.")
             print("See SETUP-API-KEYS.md for instructions.")
             sys.exit(1)
-
-    config = load_config(args.config)
-    dest_root = config["dest_root"]
-    transcribe_folders = config["transcribe_folders"]
 
     pdfs = collect_pdfs(dest_root, transcribe_folders, args.folder, args.file)
 
@@ -344,89 +482,59 @@ def main():
     from google import genai
     client = genai.Client(api_key=api_key)
 
+    # Default: batch mode (unless --fast)
+    if not args.fast:
+        from gemini_batch import submit_batch
+        from db import get_db, close_db
+        conn = get_db(dest_root)
+        print(f"\nSubmitting {len(pdfs)} PDFs for batch transcription...")
+        print(f"Model: {args.model} (50% batch discount)")
+        submitted = 0
+        for pdf in pdfs:
+            result = submit_batch(client, args.model, pdf, dest_root, conn, dpi=args.dpi)
+            if result:
+                submitted += 1
+        close_db(conn)
+        print(f"\nSubmitted {submitted} batch jobs.")
+        print("Check status:    family-archive transcribe --status")
+        print("Collect results: family-archive transcribe --collect")
+        return
+
+    # --fast mode: real-time with cross-PDF parallelism
+    from rate_limiter import RateLimiter
+    rpm = config.get("requests_per_minute", 400)
+    limiter = RateLimiter(requests_per_minute=rpm)
+
     results = []
     confidence_counts = {"high": 0, "medium": 0, "low": 0}
-    request_times = []
 
-    for i, pdf in enumerate(pdfs, 1):
-        rel = pdf.relative_to(dest_root) if pdf.is_relative_to(dest_root) else pdf
-        page_count = get_page_count(pdf)
-        print(f"\n[{i}/{len(pdfs)}] {rel} ({page_count} pages)")
+    workers = config.get("parallel_workers", 10)
+    if len(pdfs) <= 2:
+        workers = 1
 
-        try:
-            # Check for previously completed pages (incremental resume)
-            completed = load_completed_pages(pdf, page_count)
-            remaining_pages = [pn for pn in range(page_count) if pn not in completed]
-
-            if completed:
-                print(f"  Resuming: {len(completed)} pages cached, {len(remaining_pages)} remaining")
-
-            # Render only pages that need processing
-            doc = fitz.open(str(pdf))
-            page_images = {}
-            for page_num in remaining_pages:
-                page_images[page_num] = render_page_to_image(doc, page_num, dpi=args.dpi)
-            doc.close()
-
-            # Process remaining pages in parallel (up to 10 concurrent API calls)
-            page_texts = {pn: text for pn, text in completed.items()}
-            max_workers = min(10, len(remaining_pages)) if remaining_pages else 1
-
-            def process_page(page_num):
-                return page_num, transcribe_page_gemini(client, args.model, page_images[page_num])
-
-            if remaining_pages:
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = {executor.submit(process_page, pn): pn for pn in remaining_pages}
-                    done_count = len(completed)
-                    for future in as_completed(futures):
-                        pn, text = future.result()
-                        page_texts[pn] = text
-                        save_page(pdf, pn, text)  # save incrementally
-                        done_count += 1
-                        if page_count > 1:
-                            print(f"  Page {pn + 1}/{page_count}: {len(text.split())} words ({done_count}/{page_count} done)")
-
-            # Assemble all pages in order
-            ordered_texts = [page_texts[pn] for pn in range(page_count)]
-
-            md_path, confidence, word_count = create_transcript_md(
-                pdf, ordered_texts, args.model, dest_root
-            )
-            cleanup_pages(pdf)  # remove temp page files after successful assembly
-            confidence_counts[confidence] += 1
-            print(f"  Done: {word_count} words, confidence={confidence}")
-            results.append({
-                "file": str(rel),
-                "pages": page_count,
-                "words": word_count,
-                "confidence": confidence,
-                "model": args.model,
-                "status": "ok",
-            })
-
-        except Exception as e:
-            print(f"  ERROR: {e}")
-            # Don't overwrite page progress — only write error stub if no pages saved
-            pages_dir = get_pages_dir(pdf)
-            saved_pages = len(list(pages_dir.iterdir())) if pages_dir.exists() else 0
-            if saved_pages > 0:
-                print(f"  {saved_pages}/{page_count} pages saved — will resume on next run")
-            # Write error stub
-            md_path = pdf.with_suffix(".transcript.md")
-            with open(md_path, "w", encoding="utf-8") as f:
-                f.write(
-                    f"---\nsource_file: {pdf.name}\ntranscription_date: {TODAY}\n"
-                    f"transcription_confidence: pending\npage_count: {page_count}\n"
-                    f"notes: Gemini transcription failed — {e} ({saved_pages}/{page_count} pages saved)\n---\n\n"
-                    f"[Transcription failed — {saved_pages}/{page_count} pages completed, will resume on retry]\n"
-                )
-            results.append({
-                "file": str(rel),
-                "pages": page_count,
-                "status": "error",
-                "error": str(e),
-            })
+    if workers > 1:
+        print(f"\nProcessing {len(pdfs)} PDFs with {workers} parallel workers...")
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    process_single_pdf, pdf, i, len(pdfs),
+                    client, args.model, args.dpi, dest_root, limiter
+                ): pdf
+                for i, pdf in enumerate(pdfs, 1)
+            }
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    results.append(result)
+                    if result["status"] == "ok":
+                        confidence_counts[result["confidence"]] += 1
+    else:
+        for i, pdf in enumerate(pdfs, 1):
+            result = process_single_pdf(pdf, i, len(pdfs), client, args.model, args.dpi, dest_root, limiter)
+            if result:
+                results.append(result)
+                if result["status"] == "ok":
+                    confidence_counts[result["confidence"]] += 1
 
     ok = sum(1 for r in results if r["status"] == "ok")
     err = sum(1 for r in results if r["status"] == "error")
