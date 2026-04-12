@@ -146,3 +146,59 @@ def extract_doc(path):
 
     word_count = len(text.split()) if text else 0
     return text, {"word_count": word_count, "format": "doc"}
+
+
+@register(".xlsx")
+def extract_xlsx(path):
+    """Extract text from an XLSX file using openpyxl."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(str(path), read_only=True, data_only=True)
+    parts = []
+    sheet_count = len(wb.sheetnames)
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        if sheet_count > 1:
+            parts.append(f"## Sheet: {sheet_name}")
+
+        for row in ws.iter_rows(values_only=True):
+            cells = [str(c) for c in row if c is not None]
+            if cells:
+                parts.append("\t".join(cells))
+
+    wb.close()
+    text = "\n\n".join(parts)
+    word_count = len(text.split())
+    return text, {"word_count": word_count, "format": "xlsx", "sheet_count": sheet_count}
+
+
+@register(".xls")
+def extract_xls(path):
+    """Extract text from an XLS (legacy binary) file using xlrd."""
+    import xlrd
+
+    wb = xlrd.open_workbook(str(path))
+    parts = []
+    sheet_count = wb.nsheets
+
+    for sheet_idx in range(sheet_count):
+        ws = wb.sheet_by_index(sheet_idx)
+        if sheet_count > 1:
+            parts.append(f"## Sheet: {ws.name}")
+
+        for row_idx in range(ws.nrows):
+            cells = []
+            for col_idx in range(ws.ncols):
+                val = ws.cell_value(row_idx, col_idx)
+                if val != "":
+                    if isinstance(val, float) and val == int(val):
+                        cells.append(str(int(val)))
+                    else:
+                        cells.append(str(val))
+            if cells:
+                parts.append("\t".join(cells))
+
+    text = "\n\n".join(parts)
+    word_count = len(text.split())
+    return text, {"word_count": word_count, "format": "xls", "sheet_count": sheet_count}

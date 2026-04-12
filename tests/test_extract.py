@@ -137,3 +137,106 @@ class TestDocExtractor:
         text, metadata = extract_file(path)
         assert metadata["format"] == "doc"
         assert isinstance(text, str)
+
+
+class TestXlsxExtractor:
+    """Test XLSX text extraction."""
+
+    def _make_xlsx(self, path, sheets):
+        from openpyxl import Workbook
+        wb = Workbook()
+        first = True
+        for name, rows in sheets.items():
+            if first:
+                ws = wb.active
+                ws.title = name
+                first = False
+            else:
+                ws = wb.create_sheet(name)
+            for row in rows:
+                ws.append(row)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        wb.save(str(path))
+        return path
+
+    def test_extract_xlsx_text(self, tmp_path):
+        path = self._make_xlsx(tmp_path / "data.xlsx", {
+            "People": [["Name", "Age"], ["Alice", 30], ["Bob", 25]]
+        })
+        text, metadata = extract_file(path)
+        assert "Alice" in text
+        assert "Bob" in text
+        assert "30" in text
+
+    def test_extract_xlsx_metadata(self, tmp_path):
+        path = self._make_xlsx(tmp_path / "data.xlsx", {
+            "Sheet1": [["A", "B"], ["C", "D"]]
+        })
+        text, metadata = extract_file(path)
+        assert metadata["format"] == "xlsx"
+        assert metadata["sheet_count"] == 1
+        assert metadata["word_count"] > 0
+
+    def test_extract_xlsx_multiple_sheets(self, tmp_path):
+        path = self._make_xlsx(tmp_path / "multi.xlsx", {
+            "People": [["Name"], ["Alice"]],
+            "Places": [["City"], ["Springfield"]],
+        })
+        text, metadata = extract_file(path)
+        assert "Alice" in text
+        assert "Springfield" in text
+        assert metadata["sheet_count"] == 2
+        assert "People" in text
+        assert "Places" in text
+
+    def test_extract_xlsx_empty_cells_skipped(self, tmp_path):
+        path = self._make_xlsx(tmp_path / "sparse.xlsx", {
+            "Sheet1": [["A", None, "B"], [None, None, None], ["C", "D", None]]
+        })
+        text, metadata = extract_file(path)
+        assert "A" in text
+        assert "B" in text
+        assert "C" in text
+
+
+class TestXlsExtractor:
+    """Test XLS (legacy binary) text extraction."""
+
+    def _make_xls(self, path, sheets):
+        try:
+            import xlwt
+        except ImportError:
+            pytest.skip("xlwt not installed")
+        wb = xlwt.Workbook()
+        for name, rows in sheets.items():
+            ws = wb.add_sheet(name)
+            for r, row in enumerate(rows):
+                for c, val in enumerate(row):
+                    if val is not None:
+                        ws.write(r, c, val)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        wb.save(str(path))
+        return path
+
+    def test_xls_extension_registered(self):
+        exts = get_supported_extensions()
+        assert ".xls" in exts
+
+    def test_extract_xls_text(self, tmp_path):
+        path = self._make_xls(tmp_path / "data.xls", {
+            "People": [["Name", "Age"], ["Alice", 30]]
+        })
+        text, metadata = extract_file(path)
+        assert "Alice" in text
+        assert metadata["format"] == "xls"
+        assert metadata["sheet_count"] == 1
+
+    def test_extract_xls_multiple_sheets(self, tmp_path):
+        path = self._make_xls(tmp_path / "multi.xls", {
+            "Names": [["Alice"]],
+            "Cities": [["Springfield"]],
+        })
+        text, metadata = extract_file(path)
+        assert "Alice" in text
+        assert "Springfield" in text
+        assert metadata["sheet_count"] == 2
