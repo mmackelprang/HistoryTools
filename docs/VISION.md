@@ -729,33 +729,38 @@ WS   /ws/progress                   # WebSocket for live progress
 - Publish to GitHub as `family-archive-toolkit`
 - Estimated: 2-3 sessions
 
-### Phase 2: Library refactor + SQLite + new media + document splitting
-- Extract core library from scripts
-- Add progress callback system
-- Add SQLite index layer with FTS5 full-text search
-- Add `family-archive search` and `reindex` commands
-- Add document splitting (see below)
-- Add video transcription (ffmpeg + existing audio pipeline)
-- Add email import (.eml, .mbox)
-- Add photo AI descriptions
-- Test suite
+### Phase 2: Library refactor + SQLite + new media + document splitting ✅
+- ✅ Extract core library from scripts (scripts/core/ subpackage)
+- ✅ Add SQLite index layer with FTS5 full-text search
+- ✅ Add `family-archive search` and `reindex` commands
+- ✅ Add document splitting
+- ✅ Add duplicate detection and idempotent ingestion
+- ✅ Add Gemini batch processing with auto-chunking
+- ✅ Add MS Office document extraction (DOC, DOCX, XLS, XLSX)
+- ✅ Test suite (518 tests)
 - Publish to PyPI
 - Estimated: 4-5 sessions
 
-### Phase 3: Web UI
+### Phase 3: Web UI + media expansion
 - FastAPI backend with WebSocket progress
 - htmx frontend (no build step)
 - Dashboard, import, browse, rename review screens
 - Settings UI that reads/writes config.json + taxonomy.json
 - Document splitter UI with visual page selection
-- Estimated: 3-4 sessions
+- Add video transcription (ffmpeg + existing audio pipeline)
+- Add email import (.eml, .mbox)
+- Add photo AI descriptions
+- Add progress callback system
+- Rename scripts/ to familyarchive/ package
+- Estimated: 4-6 sessions
 
 ### Phase 4: Advanced features
+- Embedding-based semantic search (RAG) across all transcripts
+- Entity extraction pipeline (people, places, dates, events)
 - Face detection/recognition in photos
 - SMS import
 - Timeline view
-- Search across all transcripts
-- AI-powered "ask questions about your archive" (RAG)
+- AI-powered "ask questions about your archive"
 
 ## Document Splitting
 
