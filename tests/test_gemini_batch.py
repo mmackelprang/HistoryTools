@@ -243,3 +243,65 @@ class TestCollectResults:
         assert count == 0
         mock_client.batches.get.assert_not_called()
         close_db(conn)
+
+
+class TestEndToEnd:
+    """End-to-end integration test for the batch workflow."""
+
+    def test_submit_check_collect_workflow(self, tmp_path):
+        """Submit -> check status -> collect results."""
+        dest = tmp_path / "archive"
+        dest.mkdir()
+        pdf = make_test_pdf(dest / "Letters" / "letter.pdf", pages=2)
+        conn = get_db(dest)
+
+        # Step 1: Submit
+        mock_client = MagicMock()
+        mock_batch_job = MagicMock()
+        mock_batch_job.name = "batches/test-e2e"
+        mock_client.batches.create.return_value = mock_batch_job
+
+        batch_id = submit_batch(mock_client, "gemini-2.5-flash", pdf, dest, conn)
+        assert batch_id == "batches/test-e2e"
+
+        # Verify submitted in DB
+        cursor = conn.execute("SELECT status FROM batches WHERE batch_id = ?", (batch_id,))
+        assert cursor.fetchone()["status"] == "submitted"
+
+        # Step 2: Check status (simulate succeeded)
+        mock_succeeded_job = MagicMock()
+        mock_succeeded_job.state.name = "JOB_STATE_SUCCEEDED"
+        mock_client.batches.get.return_value = mock_succeeded_job
+
+        counts = check_status(mock_client, conn)
+        assert counts["succeeded"] == 1
+
+        cursor = conn.execute("SELECT status FROM batches WHERE batch_id = ?", (batch_id,))
+        assert cursor.fetchone()["status"] == "succeeded"
+
+        # Step 3: Collect results
+        mock_result_job = MagicMock()
+        resp1 = MagicMock()
+        resp1.response.text = "Dear Alice, page one text"
+        resp1.error = None
+        resp2 = MagicMock()
+        resp2.response.text = "Page two text, love Bob"
+        resp2.error = None
+        mock_result_job.dest.inlined_responses = [resp1, resp2]
+        mock_client.batches.get.return_value = mock_result_job
+
+        collected = collect_results(mock_client, conn, dest)
+        assert collected == 1
+
+        # Verify transcript exists
+        transcript = dest / "Letters" / "letter.transcript.md"
+        assert transcript.exists()
+        content = transcript.read_text(encoding="utf-8")
+        assert "Dear Alice" in content
+        assert "love Bob" in content
+
+        # Verify status is collected
+        cursor = conn.execute("SELECT status FROM batches WHERE batch_id = ?", (batch_id,))
+        assert cursor.fetchone()["status"] == "collected"
+
+        close_db(conn)
