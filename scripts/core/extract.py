@@ -116,3 +116,33 @@ def extract_docx(path):
     text = "\n\n".join(parts)
     word_count = len(text.split())
     return text, {"word_count": word_count, "format": "docx"}
+
+
+@register(".doc")
+def extract_doc(path):
+    """Extract text from a DOC (binary Word) file using olefile.
+
+    DOC files store text in the WordDocument stream as a sequence of
+    bytes. This extracts readable ASCII/UTF-8 text. Complex formatting
+    and embedded objects are skipped.
+    """
+    import olefile
+
+    text = ""
+    try:
+        if not olefile.isOleFile(str(path)):
+            return "", {"word_count": 0, "format": "doc"}
+
+        ole = olefile.OleFileIO(str(path))
+        if ole.exists("WordDocument"):
+            data = ole.openstream("WordDocument").read()
+            text = data.decode("latin-1", errors="replace")
+            text = "".join(c if c.isprintable() or c in "\n\r\t" else " " for c in text)
+            lines = [line.strip() for line in text.split("\n") if line.strip()]
+            text = "\n\n".join(lines)
+        ole.close()
+    except Exception:
+        text = ""
+
+    word_count = len(text.split()) if text else 0
+    return text, {"word_count": word_count, "format": "doc"}

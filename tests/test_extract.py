@@ -121,3 +121,19 @@ class TestTranscriptGeneration:
         )
         content = md_path.read_text(encoding="utf-8")
         assert "The full body text." in content
+
+
+class TestDocExtractor:
+    """Test DOC (binary Word) text extraction."""
+
+    def test_doc_extension_registered(self):
+        exts = get_supported_extensions()
+        assert ".doc" in exts
+
+    def test_extract_invalid_doc_returns_empty(self, tmp_path):
+        """Invalid DOC file should return empty text, not crash."""
+        path = tmp_path / "bad.doc"
+        path.write_bytes(b"\x00" * 100)
+        text, metadata = extract_file(path)
+        assert metadata["format"] == "doc"
+        assert isinstance(text, str)
