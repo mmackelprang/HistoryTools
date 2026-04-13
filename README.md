@@ -71,7 +71,7 @@ family-archive organize --dry-run        # preview
 family-archive organize                  # run
 
 # Transcribe PDFs — tiered approach (free first, AI only when needed)
-python scripts/transcribe_pdfs.py        # free: native text + Tesseract OCR
+python -m familyarchive.transcribe_pdfs   # free: native text + Tesseract OCR
 family-archive transcribe --low-confidence-only   # paid: AI only for low-confidence results
 family-archive transcribe                # paid: AI for all untranscribed PDFs
 
@@ -161,7 +161,7 @@ PDF transcription uses a **tiered approach** to minimize AI costs:
 The ingest pipeline runs all three tiers automatically. When running manually:
 
 ```bash
-python scripts/transcribe_pdfs.py                    # free: tiers 1 + 2
+python -m familyarchive.transcribe_pdfs               # free: tiers 1 + 2
 family-archive transcribe --low-confidence-only       # paid: tier 3 for low-confidence only
 ```
 
