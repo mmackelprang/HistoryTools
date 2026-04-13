@@ -269,7 +269,9 @@ CREATE TABLE entities_people (
     name TEXT NOT NULL,
     alternate_names TEXT,        -- JSON array
     birth_date TEXT,
+    birth_date_precision TEXT,   -- exact, month, year, decade, approximate
     death_date TEXT,
+    death_date_precision TEXT,   -- exact, month, year, decade, approximate
     notes TEXT,
     source_connector TEXT,       -- which connector created this
     external_id TEXT,            -- ID in source system
@@ -287,6 +289,7 @@ CREATE TABLE entities_locations (
     country TEXT,
     latitude REAL,
     longitude REAL,
+    precision TEXT,              -- exact, city, state, country, approximate
     notes TEXT,
     created_at TEXT,
     updated_at TEXT
@@ -298,7 +301,9 @@ CREATE TABLE entities_events (
     name TEXT NOT NULL,          -- "1996 Family Reunion"
     event_type TEXT,             -- reunion, wedding, funeral, etc.
     start_date TEXT,
+    start_date_precision TEXT,   -- exact, month, year, decade, approximate
     end_date TEXT,
+    end_date_precision TEXT,
     location_id INTEGER REFERENCES entities_locations(id),
     notes TEXT,
     created_at TEXT,
@@ -310,7 +315,9 @@ CREATE TABLE entities_timeframes (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     start_date TEXT,
+    start_date_precision TEXT,   -- exact, month, year, decade, approximate
     end_date TEXT,
+    end_date_precision TEXT,
     person_id INTEGER REFERENCES entities_people(id),  -- optional: whose timeframe
     notes TEXT,
     created_at TEXT,
