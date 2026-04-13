@@ -118,7 +118,7 @@ class TestSchema:
         cursor = conn.execute("PRAGMA user_version")
         version = cursor.fetchone()[0]
         close_db(conn)
-        assert version == 2
+        assert version == 3
 
     def test_db_created_at_dest_root(self, tmp_path):
         conn = get_db(tmp_path)
@@ -790,7 +790,7 @@ class TestSchemaV2:
         conn = get_db(tmp_path)
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         close_db(conn)
-        assert version == 2
+        assert version == 3
 
     def test_provenance_insert(self, tmp_path):
         dest = tmp_path / "archive"
@@ -958,7 +958,7 @@ class TestSchemaV2:
 
         # Verify version is now 2
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 2
+        assert version == 3
 
         # Verify all v2 tables exist
         cursor = conn.execute(
