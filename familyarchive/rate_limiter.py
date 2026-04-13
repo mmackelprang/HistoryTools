@@ -1,4 +1,4 @@
-"""Shim — real implementation in scripts/core/rate_limiter.py"""
+"""Shim — real implementation in familyarchive/core/rate_limiter.py"""
 try:
     from .core.rate_limiter import *  # noqa: F401,F403
 except ImportError:

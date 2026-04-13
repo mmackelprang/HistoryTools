@@ -173,6 +173,7 @@ def update_person(conn: sqlite3.Connection, person_id: int, **kwargs) -> None:
 def delete_person(conn: sqlite3.Connection, person_id: int) -> None:
     conn.execute("DELETE FROM entity_files WHERE entity_type = 'person' AND entity_id = ?", (person_id,))
     conn.execute("DELETE FROM people_relationships WHERE person_id = ? OR related_person_id = ?", (person_id, person_id))
+    conn.execute("UPDATE entities_timeframes SET person_id = NULL WHERE person_id = ?", (person_id,))
     conn.execute("DELETE FROM entities_people WHERE id = ?", (person_id,))
     conn.commit()
 
@@ -385,6 +386,9 @@ def list_tags(conn: sqlite3.Connection) -> list[Tag]:
 
 # -- Entity <-> File Linking --
 
+VALID_ENTITY_TYPES = {"person", "location", "event", "timeframe", "tag"}
+
+
 def link_entity_to_file(
     conn: sqlite3.Connection,
     entity_type: str,
@@ -392,6 +396,8 @@ def link_entity_to_file(
     file_id: int,
     confidence: str = "manual",
 ) -> None:
+    if entity_type not in VALID_ENTITY_TYPES:
+        raise ValueError(f"Invalid entity_type: {entity_type!r}. Must be one of: {VALID_ENTITY_TYPES}")
     conn.execute(
         "INSERT OR IGNORE INTO entity_files "
         "(entity_type, entity_id, file_id, confidence, created_at) "

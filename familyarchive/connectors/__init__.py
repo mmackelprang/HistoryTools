@@ -17,9 +17,9 @@ from .base import (
     Collection,
     Item,
     DownloadedItem,
-    _registry,
     register_connector,
 )
+from .base import _registry as _registry
 
 __all__ = [
     "Connector", "ConnectorRegistry", "AuthType", "DataType",

@@ -94,3 +94,16 @@ def test_get_storage_unknown_type():
     """get_storage() raises for unknown storage types."""
     with pytest.raises(ValueError, match="Unknown storage type"):
         get_storage({"type": "s3", "bucket": "test"})
+
+
+def test_local_storage_path_traversal_blocked(tmp_path):
+    """LocalStorage blocks path traversal attempts."""
+    storage = LocalStorage(root=tmp_path)
+    with pytest.raises(ValueError, match="Path traversal blocked"):
+        storage.write("../escape.txt", b"should not work")
+    with pytest.raises(ValueError, match="Path traversal blocked"):
+        storage.read("../escape.txt")
+    with pytest.raises(ValueError, match="Path traversal blocked"):
+        storage.delete("../../etc/passwd")
+    # Verify no file was created outside root
+    assert not (tmp_path.parent / "escape.txt").exists()
