@@ -30,7 +30,7 @@ def _get_version():
         return __version__
     except (ImportError, SystemError):
         pass
-    return "0.1.0"
+    return "0.2.0"
 
 
 __version__ = _get_version()

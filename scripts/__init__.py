@@ -5,4 +5,4 @@ This package contains the CLI scripts for digitizing, organizing,
 transcribing, and searching family archives.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

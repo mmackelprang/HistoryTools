@@ -106,9 +106,18 @@ family-archive split --apply --dry-run   # preview
 family-archive split --apply             # apply approved splits
 family-archive split --apply --archive-original  # move originals to _compilations/
 
+# Extract text from Office documents (DOC, DOCX, XLS, XLSX)
+family-archive extract --dry-run          # preview
+family-archive extract                    # extract all
+family-archive extract --folder NeedsReview  # one folder
+
 # Catalog photos, detect duplicates, generate report
 family-archive photos
-family-archive duplicates
+# Detect and manage duplicate files
+family-archive duplicates --scan           # detect duplicates
+family-archive duplicates --apply          # quarantine approved
+family-archive duplicates --status         # check quarantine
+family-archive duplicates --purge          # delete past TTL
 family-archive report
 
 # Build the search index (rebuilds from filesystem)
@@ -156,13 +165,23 @@ python scripts/transcribe_pdfs.py                    # free: tiers 1 + 2
 family-archive transcribe --low-confidence-only       # paid: tier 3 for low-confidence only
 ```
 
+```bash
+# Batch mode (default — 50% cheaper, processes overnight)
+family-archive transcribe                  # submit batch jobs
+family-archive transcribe --status         # check batch progress
+family-archive transcribe --collect        # retrieve results
+
+# Real-time mode (immediate results)
+family-archive transcribe --fast           # cross-PDF parallelism
+```
+
 ## AI-Powered Features
 
 These features require API keys (see [docs/SETUP-API-KEYS.md](docs/SETUP-API-KEYS.md)):
 
 | Command | Default Service | Alternatives | What It Does | Estimated Cost |
 |---------|----------------|-------------|-------------|---------------|
-| `family-archive transcribe` | Google Gemini | OpenAI GPT-4o | AI vision for handwriting OCR | ~$0.50-1.00 per 1000 pages |
+| `family-archive transcribe` | Google Gemini | OpenAI GPT-4o | AI vision (batch default, 50% cheaper) | ~$0.25-0.50 per 1000 pages |
 | `family-archive transcribe --low-confidence-only` | Google Gemini | OpenAI GPT-4o | AI only for low-confidence files | Much less (only handwriting) |
 | `family-archive transcribe-audio` | AssemblyAI | -- | Speaker-diarized audio transcription | ~$0.01/minute |
 | `family-archive format` | — (mechanical) | — | Page breaks, whitespace cleanup, artifact removal | **Free** |
@@ -257,6 +276,11 @@ Installed automatically via `pip install -e ".[all]"`:
 | anthropic | Transcript formatting with Claude |
 | openai-whisper | Local audio transcription |
 | exifread | EXIF metadata from photos |
+| imagehash | Perceptual duplicate detection |
+| python-docx | DOCX text extraction |
+| openpyxl | XLSX spreadsheet extraction |
+| xlrd | XLS (legacy) spreadsheet extraction |
+| olefile | DOC (legacy Word) extraction |
 
 System tools (install separately): [Tesseract OCR](https://github.com/tesseract-ocr/tesseract), [FFmpeg](https://ffmpeg.org/download.html)
 
@@ -272,8 +296,9 @@ System tools (install separately): [Tesseract OCR](https://github.com/tesseract-
 ## Roadmap
 
 **Open source (this repo):**
-- **Phase 1** (current): CLI toolkit for documents, audio, and basic organization
-- **Phase 2**: Library refactor, SQLite index, entity extraction, document splitting, video transcription
+- **Phase 1** ✅: CLI toolkit for documents, audio, and basic organization
+- **Phase 2** ✅: Core library, SQLite/FTS5 search, document splitting, duplicate detection, Gemini batch processing, Office document extraction
+- **Phase 3**: Web UI, video transcription, email import, photo AI, embedding-based search
 
 **Subscription service ([historytools.io](https://historytools.io)):**
 - **Phase 3+**: Web UI, managed AI gateway, photo AI, timeline/map/people graph, narrative generation, FamilySearch integration, multi-family collaboration
