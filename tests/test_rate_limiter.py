@@ -7,7 +7,7 @@ import threading
 
 import pytest
 
-from scripts.rate_limiter import RateLimiter
+from familyarchive.core.rate_limiter import RateLimiter
 
 
 class TestRateLimiter:

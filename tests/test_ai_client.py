@@ -21,7 +21,7 @@ _has_genai = _check_module("google.genai") or _check_module("google")
 _has_openai = _check_module("openai")
 _has_anthropic = _check_module("anthropic")
 
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "familyarchive"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -35,34 +35,34 @@ class TestGetAiClient:
         """get_ai_client() raises ValueError when no API keys are in env."""
         with patch.dict(os.environ, {}, clear=True):
             # Also suppress load_env from loading a real .env
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with pytest.raises(ValueError, match="No AI API key found"):
                     get_ai_client()
 
     def test_raises_value_error_for_unknown_vendor(self):
         """get_ai_client() raises ValueError for an unknown vendor name."""
-        with patch("ai_client.load_env"):
+        with patch("core.ai_client.load_env"):
             with pytest.raises(ValueError, match="Unknown vendor"):
                 get_ai_client(vendor="deepseek")
 
     def test_explicit_vendor_gemini_without_key_raises(self):
         """Requesting gemini explicitly without a key raises ValueError (key checked before SDK import)."""
         with patch.dict(os.environ, {}, clear=True):
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with pytest.raises(ValueError, match="GEMINI_API_KEY not set"):
                     get_ai_client(vendor="gemini")
 
     def test_explicit_vendor_openai_without_key_raises(self):
         """Requesting openai explicitly without a key raises ValueError."""
         with patch.dict(os.environ, {}, clear=True):
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with pytest.raises(ValueError, match="OPENAI_API_KEY not set"):
                     get_ai_client(vendor="openai")
 
     def test_cloud_vendor_without_key_raises(self):
         """Requesting cloud without a key raises ValueError."""
         with patch.dict(os.environ, {}, clear=True):
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with pytest.raises(ValueError, match="HISTORYTOOLS_API_KEY not set"):
                     get_ai_client(vendor="cloud")
 
@@ -70,7 +70,7 @@ class TestGetAiClient:
         """Cloud vendor with key raises NotImplementedError (coming soon)."""
         env = {"HISTORYTOOLS_API_KEY": "ht_test_key"}
         with patch.dict(os.environ, env, clear=True):
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with pytest.raises(NotImplementedError, match="not yet available"):
                     get_ai_client(vendor="cloud")
 
@@ -78,14 +78,14 @@ class TestGetAiClient:
         """When HISTORYTOOLS_API_KEY is set, cloud is preferred over other vendors."""
         env = {"HISTORYTOOLS_API_KEY": "ht_key", "GEMINI_API_KEY": "gem_key"}
         with patch.dict(os.environ, env, clear=True):
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with pytest.raises(NotImplementedError, match="not yet available"):
                     get_ai_client()  # should auto-detect cloud
 
     def test_explicit_vendor_anthropic_without_key_raises(self):
         """Requesting anthropic explicitly without a key raises ValueError."""
         with patch.dict(os.environ, {}, clear=True):
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with pytest.raises(ValueError, match="ANTHROPIC_API_KEY not set"):
                     get_ai_client(vendor="anthropic")
 
@@ -94,7 +94,7 @@ class TestGetAiClient:
         """Auto-detection returns gemini when GEMINI_API_KEY is set."""
         env = {"GEMINI_API_KEY": "test-key-123"}
         with patch.dict(os.environ, env, clear=True):
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with patch("google.genai.Client") as mock_client:
                     mock_client.return_value = MagicMock()
                     client, vendor = get_ai_client()
@@ -105,7 +105,7 @@ class TestGetAiClient:
         """Auto-detection returns openai when only OPENAI_API_KEY is set."""
         env = {"OPENAI_API_KEY": "test-key-456"}
         with patch.dict(os.environ, env, clear=True):
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with patch("openai.OpenAI") as mock_client:
                     mock_client.return_value = MagicMock()
                     client, vendor = get_ai_client()
@@ -116,7 +116,7 @@ class TestGetAiClient:
         """Auto-detection returns anthropic when only ANTHROPIC_API_KEY is set."""
         env = {"ANTHROPIC_API_KEY": "test-key-789"}
         with patch.dict(os.environ, env, clear=True):
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with patch("anthropic.Anthropic") as mock_client:
                     mock_client.return_value = MagicMock()
                     client, vendor = get_ai_client()
@@ -127,7 +127,7 @@ class TestGetAiClient:
         """When both GEMINI and OPENAI keys are set, gemini is preferred."""
         env = {"GEMINI_API_KEY": "gem-key", "OPENAI_API_KEY": "oai-key"}
         with patch.dict(os.environ, env, clear=True):
-            with patch("ai_client.load_env"):
+            with patch("core.ai_client.load_env"):
                 with patch("google.genai.Client") as mock_client:
                     mock_client.return_value = MagicMock()
                     client, vendor = get_ai_client()

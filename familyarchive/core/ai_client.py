@@ -8,12 +8,9 @@ import re
 import json
 import time
 
-# ai_client keeps its real implementation here (not in core/) because
-# tests patch "ai_client.load_env" which requires the function to be
-# defined in this module. scripts/core/ai_client.py is a reverse shim.
 try:
-    from .core.config import load_env
-    from .core.cost_tracker import get_tracker
+    from .config import load_env
+    from .cost_tracker import get_tracker
 except ImportError:
     from config import load_env  # type: ignore[no-redef]
     from cost_tracker import get_tracker  # type: ignore[no-redef]

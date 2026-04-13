@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.db import get_db, close_db
-from scripts.gemini_batch import submit_batch, check_status, collect_results
+from familyarchive.core.db import get_db, close_db
+from familyarchive.gemini_batch import submit_batch, check_status, collect_results
 
 
 def make_file(path: Path, content: str = "test content") -> Path:
@@ -266,7 +266,7 @@ class TestChunking:
         mock_client.batches.create.assert_called_once()
         close_db(conn)
 
-    @patch("scripts.gemini_batch._CHUNK_SIZE_LIMIT", 500)
+    @patch("familyarchive.gemini_batch._CHUNK_SIZE_LIMIT", 500)
     def test_large_pdf_multiple_chunks(self, tmp_path):
         """With a tiny chunk limit, even small pages should split into chunks."""
         dest = tmp_path / "archive"
@@ -304,7 +304,7 @@ class TestChunking:
         assert total_chunk_pages == 5
         close_db(conn)
 
-    @patch("scripts.gemini_batch._CHUNK_SIZE_LIMIT", 500)
+    @patch("familyarchive.gemini_batch._CHUNK_SIZE_LIMIT", 500)
     def test_collect_multi_chunk_reassembles_pages(self, tmp_path):
         """Test that collect_results reassembles pages from multiple chunks."""
         dest = tmp_path / "archive"
@@ -367,7 +367,7 @@ class TestChunking:
             assert row["status"] == "collected"
         close_db(conn)
 
-    @patch("scripts.gemini_batch._CHUNK_SIZE_LIMIT", 500)
+    @patch("familyarchive.gemini_batch._CHUNK_SIZE_LIMIT", 500)
     def test_collect_waits_for_all_chunks(self, tmp_path):
         """Don't collect until all chunks have succeeded."""
         dest = tmp_path / "archive"

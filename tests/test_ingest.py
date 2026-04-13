@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-# Ensure scripts/ is importable
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+# Ensure familyarchive/ is importable
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "familyarchive"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -825,7 +825,7 @@ class TestScanSource:
 
 import copy
 
-SCRIPTS_DIR_FOR_CONFIG = Path(__file__).resolve().parent.parent / "scripts"
+SCRIPTS_DIR_FOR_CONFIG = Path(__file__).resolve().parent.parent / "familyarchive"
 if str(SCRIPTS_DIR_FOR_CONFIG) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR_FOR_CONFIG))
 

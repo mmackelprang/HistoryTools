@@ -16,11 +16,11 @@ class TestCLIImport:
     """Test that CLI module can be imported."""
 
     def test_main_importable(self):
-        from scripts.cli import main
+        from familyarchive.cli import main
         assert callable(main)
 
     def test_version_importable(self):
-        from scripts import __version__
+        from familyarchive import __version__
         assert __version__  # non-empty string
         assert "." in __version__  # looks like a version
 
@@ -30,11 +30,11 @@ class TestCLIVersion:
 
     def test_version_flag(self):
         result = subprocess.run(
-            [sys.executable, "-m", "scripts.cli", "--version"],
+            [sys.executable, "-m", "familyarchive.cli", "--version"],
             capture_output=True, text=True, cwd=REPO_ROOT,
         )
         assert result.returncode == 0
-        assert "0.2.0" in result.stdout
+        assert "0.3.0" in result.stdout
 
 
 class TestCLIHelp:
@@ -42,7 +42,7 @@ class TestCLIHelp:
 
     def test_help_flag(self):
         result = subprocess.run(
-            [sys.executable, "-m", "scripts.cli", "--help"],
+            [sys.executable, "-m", "familyarchive.cli", "--help"],
             capture_output=True, text=True, cwd=REPO_ROOT,
         )
         assert result.returncode == 0
@@ -53,7 +53,7 @@ class TestCLIHelp:
 
     def test_no_args_shows_help(self):
         result = subprocess.run(
-            [sys.executable, "-m", "scripts.cli"],
+            [sys.executable, "-m", "familyarchive.cli"],
             capture_output=True, text=True, cwd=REPO_ROOT,
         )
         # Should exit with code 1 (no command given) and show help
@@ -67,7 +67,7 @@ class TestPlaceholderCommands:
     @pytest.mark.parametrize("cmd", ["serve"])
     def test_placeholder_prints_coming_soon(self, cmd):
         result = subprocess.run(
-            [sys.executable, "-m", "scripts.cli", cmd],
+            [sys.executable, "-m", "familyarchive.cli", cmd],
             capture_output=True, text=True, cwd=REPO_ROOT,
         )
         assert result.returncode == 0
@@ -79,7 +79,7 @@ class TestDuplicatesCLI:
 
     def test_duplicates_no_args_shows_help(self):
         result = subprocess.run(
-            [sys.executable, "-m", "scripts.cli", "duplicates"],
+            [sys.executable, "-m", "familyarchive.cli", "duplicates"],
             capture_output=True, text=True, cwd=REPO_ROOT,
         )
         # Should show help, not crash or say "Coming soon"

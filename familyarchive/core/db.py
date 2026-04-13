@@ -15,7 +15,7 @@ import hashlib
 from pathlib import Path
 
 # Schema version — bump when schema changes
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Date prefix pattern: YYYY-MM-DD_ at start of filename
 DATE_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})_")
@@ -154,6 +154,7 @@ def get_db(dest_root, config=None):
     try:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA busy_timeout = 5000")
         wal_result = conn.execute("PRAGMA journal_mode=WAL").fetchone()
         if wal_result and wal_result[0].lower() != "wal":
@@ -286,6 +287,10 @@ def init_schema(conn):
                 content_rowid='rowid'
             )
         """)
+
+    # Entity tables (people, locations, events, timeframes, tags, etc.)
+    from familyarchive.entities.db import init_entity_schema
+    init_entity_schema(conn)
 
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     conn.commit()

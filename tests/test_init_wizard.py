@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.init_wizard import (
+from familyarchive.init_wizard import (
     create_folder_structure,
     prompt_input,
     prompt_yes_no,
@@ -140,7 +140,7 @@ class TestCreateFolderStructure:
         assert (dest / "Docs").is_dir()
 
     def test_with_default_taxonomy(self, tmp_path):
-        from scripts.config import DEFAULT_TAXONOMY
+        from familyarchive.core.config import DEFAULT_TAXONOMY
         dest = tmp_path / "archive"
         count = create_folder_structure(dest, DEFAULT_TAXONOMY)
         # Should create all folders from the default taxonomy

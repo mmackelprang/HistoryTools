@@ -58,7 +58,7 @@ Transcription uses a tiered approach to minimize costs:
 
 **Step 1: Free local transcription (native text + Tesseract OCR)**
 ```bash
-python scripts/transcribe_pdfs.py
+python -m familyarchive.transcribe_pdfs
 ```
 
 This handles all PDFs with embedded text and printed/typed scanned documents for free.
@@ -97,7 +97,7 @@ family-archive transcribe-audio             # run
 
 **Option B: Local Whisper (free, CPU-intensive)**
 ```bash
-python scripts/transcribe_audio.py
+python -m familyarchive.transcribe_audio
 ```
 
 ### 5. Label Speakers (audio only)

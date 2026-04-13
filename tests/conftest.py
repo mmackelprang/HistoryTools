@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-# Make the scripts directory importable
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+# Make the familyarchive package directory importable for bare imports
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "familyarchive"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 

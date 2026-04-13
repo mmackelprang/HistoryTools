@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.core.extract import (
+from familyarchive.core.extract import (
     extract_file,
     get_supported_extensions,
     create_extract_transcript,
@@ -246,7 +246,7 @@ class TestExtractPipeline:
     """Test the extract_docs pipeline."""
 
     def test_extract_creates_transcripts(self, tmp_path):
-        from scripts.extract_docs import run_extraction
+        from familyarchive.extract_docs import run_extraction
         from docx import Document
 
         dest = tmp_path / "archive"
@@ -268,7 +268,7 @@ class TestExtractPipeline:
         assert "Hello from the test document" in content
 
     def test_extract_skips_existing_transcripts(self, tmp_path):
-        from scripts.extract_docs import run_extraction
+        from familyarchive.extract_docs import run_extraction
         from docx import Document
 
         dest = tmp_path / "archive"
@@ -285,7 +285,7 @@ class TestExtractPipeline:
         assert len(results) == 0
 
     def test_extract_force_overwrites(self, tmp_path):
-        from scripts.extract_docs import run_extraction
+        from familyarchive.extract_docs import run_extraction
         from docx import Document
 
         dest = tmp_path / "archive"
