@@ -21,7 +21,7 @@ def _get_version():
     # Method 1: importlib.metadata (works for installed packages)
     try:
         from importlib.metadata import version, PackageNotFoundError
-        return version("family-archive-toolkit")
+        return version("familyarchive")
     except (PackageNotFoundError, ModuleNotFoundError):
         pass
     # Method 2: relative import from package __init__
@@ -30,7 +30,7 @@ def _get_version():
         return __version__
     except (ImportError, SystemError):
         pass
-    return "0.2.0"
+    return "0.3.0"
 
 
 __version__ = _get_version()

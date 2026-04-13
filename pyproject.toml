@@ -3,8 +3,8 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "family-archive-toolkit"
-version = "0.2.0"
+name = "familyarchive"
+version = "0.3.0"
 description = "CLI toolkit for digitizing, organizing, transcribing, and searching family archives"
 readme = "README.md"
 license = "MIT"
@@ -50,7 +50,7 @@ all = [
 ]
 
 [project.scripts]
-family-archive = "scripts.cli:main"
+family-archive = "familyarchive.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/mmackelprang/HistoryTools"
@@ -58,10 +58,10 @@ Repository = "https://github.com/mmackelprang/HistoryTools"
 Issues = "https://github.com/mmackelprang/HistoryTools/issues"
 
 [tool.setuptools.packages.find]
-include = ["scripts*"]
+include = ["familyarchive*"]
 
 [tool.setuptools.package-data]
-scripts = ["*.py"]
+familyarchive = ["*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -8,7 +8,7 @@ import pytest
 
 import sqlite3
 
-from scripts.db import (
+from familyarchive.core.db import (
     get_db,
     init_schema,
     close_db,

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from scripts.db import get_db, close_db, index_file
-from scripts.duplicate_manage import (
+from familyarchive.core.db import get_db, close_db, index_file
+from familyarchive.duplicate_manage import (
     apply_quarantine,
     restore_file,
     purge_expired,

@@ -5,8 +5,8 @@ Tests for the duplicate detection module (scripts/duplicate_detect.py).
 import json
 from pathlib import Path
 import pytest
-from scripts.db import get_db, close_db, index_file, index_transcript
-from scripts.duplicate_detect import (
+from familyarchive.core.db import get_db, close_db, index_file, index_transcript
+from familyarchive.duplicate_detect import (
     find_exact_duplicates,
     find_text_similar,
     compute_phash,
@@ -500,7 +500,7 @@ class TestSplitProvenance:
         parent_id = index_file(conn, dest, pdf_path)
         close_db(conn)
 
-        from scripts.split_apply import apply_single_split
+        from familyarchive.split_apply import apply_single_split
         segment = {
             "pages": [1, 2],
             "proposed_name": "1984-03-15_letter.pdf",
@@ -601,8 +601,8 @@ class TestEndToEnd:
     def test_full_workflow(self, tmp_path):
         """Scan -> proposals -> apply -> status -> purge."""
         import json
-        from scripts.duplicate_detect import scan_duplicates, generate_proposals
-        from scripts.duplicate_manage import apply_quarantine, get_quarantine_status, purge_expired
+        from familyarchive.duplicate_detect import scan_duplicates, generate_proposals
+        from familyarchive.duplicate_manage import apply_quarantine, get_quarantine_status, purge_expired
 
         dest = tmp_path / "archive"
         dest.mkdir()

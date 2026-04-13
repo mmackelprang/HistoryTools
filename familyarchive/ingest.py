@@ -708,7 +708,7 @@ def execute_plan(plan, skip_transcribe=False, skip_format=False, config_path_ove
     # Run via module invocation since cli.py uses relative imports
     import subprocess as _subprocess
     _subprocess.run(
-        [sys.executable, "-m", "scripts.cli", "duplicates", "--scan"] + config_args,
+        [sys.executable, "-m", "familyarchive.cli", "duplicates", "--scan"] + config_args,
         cwd=str(Path(__file__).resolve().parent.parent),
     )
 
