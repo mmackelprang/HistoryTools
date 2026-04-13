@@ -129,7 +129,7 @@ Future sub-projects (SP-2, SP-3, etc.) flip their routes to `enabled: true` as t
 ### Dashboard Page
 
 The dashboard (`dashboard.tsx`) displays:
-- **Stat cards** (4-column grid): Total Files, Transcripts, Total Words, AI Costs
+- **Stat cards** (4-column grid): Total Files, Transcripts, Total Words, Est. AI Costs
 - **Files by Type** breakdown: Documents, Photos, Audio, Video, Other
 - **Transcript Confidence** breakdown: High, Medium, Low counts
 
