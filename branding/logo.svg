@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1444 256">
+  <g transform="translate(0,40) scale(0.6875)">
+    <rect width="256" height="256" rx="56" fill="#4E3B2B"/>
+
+<rect x="56" y="72" width="144" height="92" rx="12" fill="#F5EBDD"/>
+<circle cx="98" cy="114" r="17" fill="none" stroke="#4E3B2B" stroke-width="8"/>
+<circle cx="158" cy="114" r="17" fill="none" stroke="#4E3B2B" stroke-width="8"/>
+<line x1="98" y1="114" x2="158" y2="114" stroke="#4E3B2B" stroke-width="6"/>
+<path d="M74 164 C60 190 96 200 126 200" fill="none" stroke="#D9A441" stroke-width="8" stroke-linecap="round"/>
+<g stroke="#D9A441" stroke-width="8" stroke-linecap="round"><line x1="142" y1="200" x2="164" y2="200"/><line x1="176" y1="200" x2="196" y2="200"/></g>
+
+  </g>
+  <text x="224" y="140" font-family="Montserrat, 'Segoe UI', 'DejaVu Sans', system-ui, sans-serif" font-size="84" font-weight="700" fill="#1B1F26">Family Archive Tools</text>
+  <text x="224" y="192" font-family="Montserrat, 'Segoe UI', 'DejaVu Sans', system-ui, sans-serif" font-size="32" font-weight="500" fill="#5A6472">From shoebox to searchable.</text>
+</svg>
